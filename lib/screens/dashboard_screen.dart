@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
+import '../widgets/mode_selector.dart';
+import '../widgets/price_chart.dart';
+import 'settings_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
   const DashboardScreen({super.key});
@@ -17,7 +20,10 @@ class DashboardScreen extends ConsumerWidget {
           IconButton(
             icon: const Icon(Icons.settings),
             onPressed: () {
-              // Navigate to settings
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
             },
           ),
         ],
@@ -26,7 +32,13 @@ class DashboardScreen extends ConsumerWidget {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            color: Colors.blueGrey.shade900,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [Colors.blueGrey.shade900, Colors.black],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
+            ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
@@ -37,52 +49,70 @@ class DashboardScreen extends ConsumerWidget {
                     ticker.when(
                       data: (data) => Text(
                         '${data['c']} USDT',
-                        style: const TextStyle(color: Colors.greenAccent, fontSize: 24, fontWeight: FontWeight.bold),
+                        style: const TextStyle(
+                          color: Colors.greenAccent,
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: 1.2,
+                        ),
                       ),
-                      loading: () => const CircularProgressIndicator(),
+                      loading: () => const SizedBox(
+                        height: 28,
+                        width: 28,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
                       error: (e, s) => Text('Error: $e', style: const TextStyle(color: Colors.red)),
                     ),
                   ],
                 ),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    const Text('Mode', style: TextStyle(color: Colors.white70)),
-                    Text(
-                      strategy.name,
-                      style: const TextStyle(color: Colors.orangeAccent, fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ],
-                ),
+                const ModeSelector(),
               ],
             ),
           ),
           const Expanded(
-            child: Center(
-              child: Text('Chart & Order History Placeholder'),
+            child: Padding(
+              padding: EdgeInsets.symmetric(vertical: 20, horizontal: 8),
+              child: PriceChart(),
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24.0),
+            child: Text(
+              'GALAUSDT Market Insights - Live Monitoring',
+              style: TextStyle(color: Colors.white38, fontSize: 14),
             ),
           ),
           Padding(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.all(24.0),
             child: Row(
               children: [
                 Expanded(
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     onPressed: () {
                       ref.read(tradingEngineProvider).start();
                     },
-                    child: const Text('START BOT'),
+                    child: const Text('START BOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 ),
                 const SizedBox(width: 16),
                 Expanded(
                   child: ElevatedButton(
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.red, foregroundColor: Colors.white),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red.shade700,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    ),
                     onPressed: () {
                       ref.read(tradingEngineProvider).stop();
                     },
-                    child: const Text('STOP BOT'),
+                    child: const Text('STOP BOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 ),
               ],
