@@ -45,6 +45,8 @@ class DashboardScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
+          Container(
+            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [Colors.blueGrey.shade900, Colors.black],
