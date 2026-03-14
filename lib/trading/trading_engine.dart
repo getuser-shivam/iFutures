@@ -28,31 +28,26 @@ class TradingEngine {
   List<Kline> get klines => _klines;
 
   Future<void> start() async {
-    print('DEBUG: Starting TradingEngine for $symbol');
     // 1. Fetch historical data
     try {
       final historicalData = await apiService.getKlines(symbol: symbol, limit: 100);
-      print('DEBUG: Fetched ${historicalData.length} historical klines');
       _klines = historicalData.map((e) => Kline.fromJson(e)).toList();
       _klineController.add(_klines);
     } catch (e) {
-      print('DEBUG ERROR: Failed to fetch historical data: $e');
+      print('Failed to fetch historical data: $e');
     }
 
     // 2. Subscribe to real-time updates
-    print('DEBUG: Subscribing to WS klines for $symbol');
     _wsSubscription = wsService.subscribeToKlines(symbol).listen((event) {
-      print('DEBUG: WS message received for $symbol');
       final kline = Kline.fromWsJson(event);
       _updateKlines(kline);
       
       // If candle is closed, evaluate strategy
       if (event['k']['x'] == true) {
-        print('DEBUG: Candle closed, evaluating strategy...');
         _evaluateStrategy();
       }
     }, onError: (e) {
-      print('DEBUG ERROR: WS subscription error: $e');
+      print('WS subscription error: $e');
     });
   }
 

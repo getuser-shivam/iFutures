@@ -13,21 +13,17 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 });
 
 final settingsInitProvider = FutureProvider<void>((ref) async {
-  print('DEBUG: Initializing SettingsService...');
   final settings = ref.watch(settingsServiceProvider);
   await settings.init();
-  print('DEBUG: SettingsService initialized.');
 });
 
 final binanceApiProvider = FutureProvider<BinanceApiService>((ref) async {
-  print('DEBUG: Loading BinanceApiService...');
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
   
   final apiKey = await settings.getApiKey() ?? '';
   final apiSecret = await settings.getApiSecret() ?? '';
   
-  print('DEBUG: BinanceApiService loaded with isTestnet: ${settings.getIsTestnet()}');
   return BinanceApiService(
     apiKey: apiKey,
     apiSecret: apiSecret,
@@ -56,7 +52,6 @@ final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
 });
 
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
-  print('DEBUG: Creating TradingEngine for $symbol...');
   final api = await ref.watch(binanceApiProvider.future);
   final ws = await ref.watch(binanceWsProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
@@ -73,11 +68,9 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref,
   );
   
   ref.onDispose(() {
-    print('DEBUG: Disposing TradingEngine for $symbol');
     engine.dispose();
   });
   
-  print('DEBUG: TradingEngine created for $symbol');
   return engine;
 });
 
