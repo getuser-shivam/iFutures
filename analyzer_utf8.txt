@@ -1,0 +1,19 @@
+﻿ERROR|COMPILE_TIME_ERROR|UNDEFINED_FUNCTION|I:\\Path\\Projects\\iFutures\\lib\\providers\\trading_provider.dart|86|30|13|The function 'StateProvider' isn't defined.
+ERROR|COMPILE_TIME_ERROR|INVALID_ASSIGNMENT|I:\\Path\\Projects\\iFutures\\lib\\services\\binance_api.dart|135|42|5|A value of type 'int' can't be assigned to a variable of type 'String'.
+ERROR|COMPILE_TIME_ERROR|URI_DOES_NOT_EXIST|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|1|8|60|Target of URI doesn't exist: 'package:flutter_secure_storage/flutter_secure_storage.dart'.
+ERROR|COMPILE_TIME_ERROR|URI_DOES_NOT_EXIST|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|2|8|52|Target of URI doesn't exist: 'package:shared_preferences/shared_preferences.dart'.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_CLASS|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|10|9|20|Undefined class 'FlutterSecureStorage'.
+ERROR|COMPILE_TIME_ERROR|CREATION_WITH_NON_TYPE|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|10|53|20|The name 'FlutterSecureStorage' isn't a class.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_CLASS|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|11|14|17|Undefined class 'SharedPreferences'.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_IDENTIFIER|I:\\Path\\Projects\\iFutures\\lib\\services\\settings_service.dart|16|20|17|Undefined name 'SharedPreferences'.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_GETTER|I:\\Path\\Projects\\iFutures\\lib\\widgets\\mode_selector.dart|28|52|8|The getter 'notifier' isn't defined for the type 'Provider<TradingStrategy>'.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_GETTER|I:\\Path\\Projects\\iFutures\\lib\\widgets\\mode_selector.dart|36|52|8|The getter 'notifier' isn't defined for the type 'Provider<TradingStrategy>'.
+ERROR|COMPILE_TIME_ERROR|CREATION_WITH_NON_TYPE|I:\\Path\\Projects\\iFutures\\test\\widget_test.dart|16|35|5|The name 'MyApp' isn't a class.
+WARNING|STATIC_WARNING|UNUSED_IMPORT|I:\\Path\\Projects\\iFutures\\lib\\trading\\ai_strategy.dart|1|8|14|Unused import: 'dart:convert'.
+WARNING|STATIC_WARNING|UNUSED_LOCAL_VARIABLE|I:\\Path\\Projects\\iFutures\\test\\binance_api_test.dart|8|13|3|The value of the local variable 'api' isn't used.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\services\\binance_api.dart|59|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\ai_strategy.dart|35|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|68|5|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|80|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|89|7|5|Don't invoke 'print' in production code.
+INFO|HINT|DEPRECATED_MEMBER_USE|I:\\Path\\Projects\\iFutures\\lib\\widgets\\price_chart.dart|39|45|11|'withOpacity' is deprecated and shouldn't be used. Use .withValues() to avoid precision loss.

@@ -100,4 +100,41 @@ class BinanceApiService {
 
     return _sendRequest('POST', '/fapi/v1/order', params: params, signed: true);
   }
+
+  Future<Map<String, dynamic>> setLeverage({
+    required String symbol,
+    required int leverage,
+  }) async {
+    final Map<String, dynamic> params = {
+      'symbol': symbol.toUpperCase(),
+      'leverage': leverage,
+    };
+    return _sendRequest('POST', '/fapi/v1/leverage', params: params, signed: true);
+  }
+
+  Future<Map<String, dynamic>> setMarginType({
+    required String symbol,
+    required String marginType, // ISOLATED, CROSSED
+  }) async {
+    final params = {
+      'symbol': symbol.toUpperCase(),
+      'marginType': marginType.toUpperCase(),
+    };
+    return _sendRequest('POST', '/fapi/v1/marginType', params: params, signed: true);
+  }
+
+  Future<List<dynamic>> getKlines({
+    required String symbol,
+    String interval = '1m',
+    int? limit,
+  }) async {
+    final Map<String, dynamic> params = {
+      'symbol': symbol.toUpperCase(),
+      'interval': interval,
+    };
+    if (limit != null) params['limit'] = limit;
+
+    final response = await _sendRequest('GET', '/fapi/v1/klines', params: params);
+    return response as List<dynamic>;
+  }
 }

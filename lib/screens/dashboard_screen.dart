@@ -10,8 +10,10 @@ class DashboardScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ticker = ref.watch(tickerStreamProvider('GALAUSDT'));
-    final strategy = ref.watch(currentStrategyProvider);
+    const symbol = 'GALAUSDT';
+    final ticker = ref.watch(tickerStreamProvider(symbol));
+    final isRunning = ref.watch(isBotRunningProvider);
+    final engineAsync = ref.watch(tradingEngineProvider(symbol));
 
     return Scaffold(
       appBar: AppBar(
@@ -94,9 +96,14 @@ class DashboardScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () {
-                      ref.read(tradingEngineProvider).start();
-                    },
+                    onPressed: isRunning || engineAsync.isLoading
+                      ? null 
+                      : () {
+                          engineAsync.whenData((engine) {
+                            ref.read(isBotRunningProvider.notifier).state = true;
+                            engine.start();
+                          });
+                        },
                     child: const Text('START BOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 ),
@@ -109,9 +116,14 @@ class DashboardScreen extends ConsumerWidget {
                       padding: const EdgeInsets.symmetric(vertical: 16),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    onPressed: () {
-                      ref.read(tradingEngineProvider).stop();
-                    },
+                    onPressed: !isRunning || engineAsync.isLoading
+                      ? null 
+                      : () {
+                          engineAsync.whenData((engine) {
+                            ref.read(isBotRunningProvider.notifier).state = false;
+                            engine.stop();
+                          });
+                        },
                     child: const Text('STOP BOT', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                   ),
                 ),

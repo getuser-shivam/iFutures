@@ -12,31 +12,31 @@ class PriceChart extends ConsumerWidget {
 
     return klines.when(
       data: (data) {
-        // In a real app, we would accumulate klines over time.
-        // For this demo, we'll show a simple simulated path or the latest final kline.
+        if (data.isEmpty) return const Center(child: Text('Loading Market Data...'));
+        
+        // Use last 50 klines for the chart
+        final recentData = data.length > 50 ? data.sublist(data.length - 50) : data;
+        
         return LineChart(
           LineChartData(
-            gridData: FlGridData(show: true, drawVerticalLine: false, getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1)),
+            gridData: FlGridData(
+              show: true,
+              drawVerticalLine: false,
+              getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1),
+            ),
             titlesData: const FlTitlesData(show: false),
             borderData: FlBorderData(show: false),
             lineBarsData: [
               LineChartBarData(
-                spots: [
-                  const FlSpot(0, 1),
-                  const FlSpot(1, 1.5),
-                  const FlSpot(2, 1.2),
-                  const FlSpot(3, 2.2),
-                  const FlSpot(4, 1.8),
-                  const FlSpot(5, 3),
-                ],
+                spots: recentData.asMap().entries.map((e) => FlSpot(e.key.toDouble(), e.value.close)).toList(),
                 isCurved: true,
                 color: Colors.greenAccent,
-                barWidth: 3,
+                barWidth: 2,
                 isStrokeCapRound: true,
                 dotData: const FlDotData(show: false),
                 belowBarData: BarAreaData(
                   show: true,
-                  color: Colors.greenAccent.withOpacity(0.1),
+                  color: Colors.greenAccent.withValues(alpha: 0.1),
                 ),
               ),
             ],

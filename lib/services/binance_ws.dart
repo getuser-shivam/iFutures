@@ -6,7 +6,7 @@ class BinanceWebSocketService {
   WebSocketChannel? _channel;
 
   String get baseWsUrl => isTestnet
-      ? 'wss://fstream.binance.com/ws' // Note: Binance testnet WS can sometimes be different, using fstream as default
+      ? 'wss://fstream.binancefuture.com/ws'
       : 'wss://fstream.binance.com/ws';
 
   BinanceWebSocketService({this.isTestnet = true});
