@@ -1,0 +1,4 @@
+The system cannot find the file specified.
+[ +174 ms] Could not find an option named "--non-interactive".
+
+[  +10 ms] Run 'flutter -h' (or 'flutter <command> -h') for available flutter commands and options.

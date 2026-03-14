@@ -10,6 +10,7 @@ class ModeSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentStrategy = ref.watch(currentStrategyProvider);
+    if (currentStrategy == null) return const SizedBox.shrink();
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),

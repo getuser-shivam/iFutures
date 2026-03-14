@@ -14,6 +14,19 @@ class DashboardScreen extends ConsumerWidget {
     final ticker = ref.watch(tickerStreamProvider(symbol));
     final isRunning = ref.watch(isBotRunningProvider);
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
+    final settingsInit = ref.watch(settingsInitProvider);
+
+    if (settingsInit.isLoading) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+
+    if (settingsInit.hasError) {
+      return Scaffold(
+        body: Center(child: Text('Settings Error: ${settingsInit.error}')),
+      );
+    }
 
     return Scaffold(
       appBar: AppBar(
@@ -32,8 +45,6 @@ class DashboardScreen extends ConsumerWidget {
       ),
       body: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [Colors.blueGrey.shade900, Colors.black],

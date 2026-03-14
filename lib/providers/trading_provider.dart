@@ -13,17 +13,21 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 });
 
 final settingsInitProvider = FutureProvider<void>((ref) async {
+  print('DEBUG: Initializing SettingsService...');
   final settings = ref.watch(settingsServiceProvider);
   await settings.init();
+  print('DEBUG: SettingsService initialized.');
 });
 
 final binanceApiProvider = FutureProvider<BinanceApiService>((ref) async {
+  print('DEBUG: Loading BinanceApiService...');
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
   
   final apiKey = await settings.getApiKey() ?? '';
   final apiSecret = await settings.getApiSecret() ?? '';
   
+  print('DEBUG: BinanceApiService loaded with isTestnet: ${settings.getIsTestnet()}');
   return BinanceApiService(
     apiKey: apiKey,
     apiSecret: apiSecret,
@@ -31,14 +35,14 @@ final binanceApiProvider = FutureProvider<BinanceApiService>((ref) async {
   );
 });
 
-final binanceWsProvider = Provider<BinanceWebSocketService>((ref) {
+final binanceWsProvider = FutureProvider<BinanceWebSocketService>((ref) async {
+  await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
-  // Note: In a real app, you might want to wait for settingsInitProvider here too
-  // but if the UI waits for it overall, it might be fine.
   return BinanceWebSocketService(isTestnet: settings.getIsTestnet());
 });
 
-final aiStrategyProvider = Provider<AiStrategy>((ref) {
+final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
+  await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
   return AiStrategy(
     apiUrl: settings.getAiUrl(),
@@ -46,14 +50,20 @@ final aiStrategyProvider = Provider<AiStrategy>((ref) {
   );
 });
 
-final currentStrategyProvider = StateProvider<TradingStrategy>((ref) {
-  return ref.read(aiStrategyProvider);
+final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
+  final aiStrategy = ref.watch(aiStrategyProvider).valueOrNull;
+  return aiStrategy;
 });
 
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
+  print('DEBUG: Creating TradingEngine for $symbol...');
   final api = await ref.watch(binanceApiProvider.future);
-  final ws = ref.watch(binanceWsProvider);
+  final ws = await ref.watch(binanceWsProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
+  
+  if (strategy == null) {
+    throw Exception('Strategy not initialized');
+  }
   
   final engine = TradingEngine(
     apiService: api,
@@ -62,14 +72,18 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref,
     symbol: symbol,
   );
   
-  ref.onDispose(() => engine.dispose());
+  ref.onDispose(() {
+    print('DEBUG: Disposing TradingEngine for $symbol');
+    engine.dispose();
+  });
   
+  print('DEBUG: TradingEngine created for $symbol');
   return engine;
 });
 
-final tickerStreamProvider = StreamProvider.family<dynamic, String>((ref, symbol) {
-  final ws = ref.watch(binanceWsProvider);
-  return ws.subscribeToTicker(symbol);
+final tickerStreamProvider = StreamProvider.family<dynamic, String>((ref, symbol) async* {
+  final ws = await ref.watch(binanceWsProvider.future);
+  yield* ws.subscribeToTicker(symbol);
 });
 
 final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, symbol) async* {
