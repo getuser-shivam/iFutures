@@ -1,0 +1,7 @@
+﻿WARNING|STATIC_WARNING|UNUSED_IMPORT|I:\\Path\\Projects\\iFutures\\lib\\providers\\trading_provider.dart|7|8|31|Unused import: '../trading/algo_strategy.dart'.
+WARNING|STATIC_WARNING|UNUSED_IMPORT|I:\\Path\\Projects\\iFutures\\test\\binance_api_test.dart|2|8|44|Unused import: 'package:ifutures/services/binance_api.dart'.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\services\\binance_api.dart|59|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\ai_strategy.dart|34|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|68|5|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|80|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|89|7|5|Don't invoke 'print' in production code.

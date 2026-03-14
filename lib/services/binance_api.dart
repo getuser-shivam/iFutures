@@ -105,7 +105,7 @@ class BinanceApiService {
     required String symbol,
     required int leverage,
   }) async {
-    final Map<String, dynamic> params = {
+    final params = <String, dynamic>{
       'symbol': symbol.toUpperCase(),
       'leverage': leverage,
     };
@@ -128,7 +128,7 @@ class BinanceApiService {
     String interval = '1m',
     int? limit,
   }) async {
-    final Map<String, dynamic> params = {
+    final params = <String, dynamic>{
       'symbol': symbol.toUpperCase(),
       'interval': interval,
     };

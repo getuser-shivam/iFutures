@@ -1,0 +1,9 @@
+﻿ERROR|COMPILE_TIME_ERROR|UNDEFINED_FUNCTION|I:\\Path\\Projects\\iFutures\\lib\\providers\\trading_provider.dart|49|33|13|The function 'StateProvider' isn't defined.
+ERROR|COMPILE_TIME_ERROR|UNDEFINED_FUNCTION|I:\\Path\\Projects\\iFutures\\lib\\providers\\trading_provider.dart|89|30|13|The function 'StateProvider' isn't defined.
+ERROR|COMPILE_TIME_ERROR|CREATION_WITH_NON_TYPE|I:\\Path\\Projects\\iFutures\\test\\widget_test.dart|16|35|13|The name 'ProviderScope' isn't a class.
+WARNING|STATIC_WARNING|UNUSED_LOCAL_VARIABLE|I:\\Path\\Projects\\iFutures\\test\\binance_api_test.dart|8|13|3|The value of the local variable 'api' isn't used.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\services\\binance_api.dart|59|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\ai_strategy.dart|34|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|68|5|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|80|7|5|Don't invoke 'print' in production code.
+INFO|LINT|AVOID_PRINT|I:\\Path\\Projects\\iFutures\\lib\\trading\\trading_engine.dart|89|7|5|Don't invoke 'print' in production code.

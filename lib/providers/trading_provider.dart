@@ -46,7 +46,9 @@ final aiStrategyProvider = Provider<AiStrategy>((ref) {
   );
 });
 
-final currentStrategyProvider = StateProvider<TradingStrategy>((ref) => ref.watch(aiStrategyProvider));
+final currentStrategyProvider = StateProvider<TradingStrategy>((ref) {
+  return ref.read(aiStrategyProvider);
+});
 
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
   final api = await ref.watch(binanceApiProvider.future);
