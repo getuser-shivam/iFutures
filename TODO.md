@@ -5,7 +5,7 @@ Last updated: 2026-03-16
 ## Now
 - [ ] Add WebSocket auto-reconnect with exponential backoff and surface status in the UI.
 - [ ] Persist trade history and risk settings to disk and reload on startup.
-- [ ] Remember last selected symbol and make the symbol list configurable in Settings.
+- [ ] Make the symbol list configurable in Settings.
 
 ## Next
 - [ ] Add a lightweight price alert system with toast notifications.
@@ -30,3 +30,4 @@ Last updated: 2026-03-16
 - [x] Connection health badge and latency indicator for the market stream.
 - [x] Manual controls visible in all modes for quick override.
 - [x] Extract shared `ActionButton` and `StatusPill` widgets into common components.
+- [x] Persist last selected symbol across restarts.

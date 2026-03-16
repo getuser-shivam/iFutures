@@ -9,6 +9,7 @@ class SettingsService {
   static const _riskStopLoss = 'risk_stop_loss_percent';
   static const _riskTakeProfit = 'risk_take_profit_percent';
   static const _riskTradeQuantity = 'risk_trade_quantity';
+  static const _lastSelectedSymbol = 'last_selected_symbol';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   SharedPreferences? _prefs;
@@ -61,6 +62,13 @@ class SettingsService {
   Future<void> setRiskTradeQuantity(double value) async {
     await init();
     await _prefs?.setDouble(_riskTradeQuantity, value);
+  }
+
+  // Last selected symbol
+  String? getLastSelectedSymbol() => _prefs?.getString(_lastSelectedSymbol);
+  Future<void> setLastSelectedSymbol(String value) async {
+    await init();
+    await _prefs?.setString(_lastSelectedSymbol, value);
   }
 
   Future<void> clearAll() async {

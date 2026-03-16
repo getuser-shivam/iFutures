@@ -55,7 +55,7 @@ class DashboardScreen extends ConsumerWidget {
             symbols: symbols,
             onChanged: (value) {
               if (value == null) return;
-              ref.read(selectedSymbolProvider.notifier).state = value;
+              ref.read(selectedSymbolProvider.notifier).setSymbol(value);
             },
           ),
           IconButton(
@@ -335,48 +335,48 @@ class DashboardScreen extends ConsumerWidget {
                   final dynamic priceValue = data is Map ? data['c'] : data;
                   final priceText = priceValue?.toString() ?? '--';
                   return Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Text(
-                      priceText,
-                      style: tabularFigures(
-                        const TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 30,
-                          fontWeight: FontWeight.w700,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      Text(
+                        priceText,
+                        style: tabularFigures(
+                          const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 30,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'USDT',
-                      style: TextStyle(
-                        color: AppColors.textSecondary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: 0.4,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.surfaceAlt,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.border),
-                      ),
-                      child: const Text(
-                        'LIVE',
+                      const SizedBox(width: 8),
+                      const Text(
+                        'USDT',
                         style: TextStyle(
-                          color: AppColors.glowCyan,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          letterSpacing: 1,
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: 0.4,
                         ),
                       ),
-                    ),
-                  ],
-                );
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.surfaceAlt,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: AppColors.border),
+                        ),
+                        child: const Text(
+                          'LIVE',
+                          style: TextStyle(
+                            color: AppColors.glowCyan,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
                 },
                 loading: () => const SizedBox(
                   height: 28,

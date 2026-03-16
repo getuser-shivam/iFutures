@@ -50,7 +50,33 @@ final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
   );
 });
 
-final selectedSymbolProvider = StateProvider<String>((ref) => 'GALAUSDT');
+const _defaultSymbol = 'GALAUSDT';
+
+class SelectedSymbolNotifier extends StateNotifier<String> {
+  final SettingsService _settings;
+
+  SelectedSymbolNotifier(this._settings) : super(_defaultSymbol) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    await _settings.init();
+    final saved = _settings.getLastSelectedSymbol();
+    if (state == _defaultSymbol && saved != null && saved.isNotEmpty) {
+      state = saved;
+    }
+  }
+
+  Future<void> setSymbol(String value) async {
+    state = value;
+    await _settings.setLastSelectedSymbol(value);
+  }
+}
+
+final selectedSymbolProvider = StateNotifierProvider<SelectedSymbolNotifier, String>((ref) {
+  final settings = ref.watch(settingsServiceProvider);
+  return SelectedSymbolNotifier(settings);
+});
 
 final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
   await ref.watch(settingsInitProvider.future);
