@@ -6,6 +6,7 @@ import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
 import '../trading/strategy.dart';
 import '../models/kline.dart';
+import '../models/trade.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -87,6 +88,17 @@ final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, sym
       engine.start();
     }
     yield* engine.klineStream;
+  } else {
+    yield [];
+  }
+});
+
+final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, symbol) async* {
+  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+  
+  if (engineAsync is AsyncData<TradingEngine>) {
+    final engine = engineAsync.value;
+    yield* engine.tradeStream;
   } else {
     yield [];
   }

@@ -4,7 +4,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Versioning
 
-- **Current version:** `1.0.2+3` (see `pubspec.yaml`)
+- **Current version:** `1.0.3+4` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 ## Application Overview
@@ -17,12 +17,14 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Bot Control**: Start/stop bot execution
 - **Market Data**: GALAUSDT and other trading pair monitoring
 - **Settings Management**: API key configuration and testnet toggle
+- **Trade History**: Real-time display of executed trades with price, quantity, and strategy info
+- **Status Indicators**: Bot running state and engine status display
 
 ## Screenshots
 
 ### Windows Desktop Application
 ![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: App showing live GALAUSDT price with strategy selector and bot controls*
+*Current state: App showing live GALAUSDT price with strategy selector, bot controls, and trade history*
 
 ## Development Status & Tasks
 
@@ -43,9 +45,9 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] AI strategy framework (API integration ready)
 - [x] **Bot status display**: Real-time bot running state indicator
 - [x] **Engine status display**: Engine load/ready/error status chips
+- [x] **Trade History**: Real-time display of executed trades with price, quantity, timestamp, and strategy information
 
 ### 🔄 In Progress / TODO
-- [ ] **Trade History**: Display completed trades with entry/exit prices and P&L
 - [ ] **Performance Metrics**: Win rate, total P&L, drawdown tracking
 - [ ] **Risk Management**: Stop loss, take profit, position sizing configuration
 - [ ] **Chart Enhancement**: Convert line chart to proper candlestick chart

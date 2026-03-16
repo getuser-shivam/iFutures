@@ -1,5 +1,6 @@
 import 'dart:async';
 import '../models/kline.dart';
+import '../models/trade.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import 'strategy.dart';
@@ -11,11 +12,15 @@ class TradingEngine {
   final String symbol;
 
   List<Kline> _klines = [];
+  List<Trade> _trades = [];
   bool _isRunning = false;
   StreamSubscription? _wsSubscription;
   
   final _klineController = StreamController<List<Kline>>.broadcast();
+  final _tradeController = StreamController<List<Trade>>.broadcast();
+  
   Stream<List<Kline>> get klineStream => _klineController.stream;
+  Stream<List<Trade>> get tradeStream => _tradeController.stream;
 
   TradingEngine({
     required this.apiService,
@@ -26,6 +31,7 @@ class TradingEngine {
 
   bool get isRunning => _isRunning;
   List<Kline> get klines => _klines;
+  List<Trade> get trades => _trades;
 
   Future<void> start() async {
     // 1. Fetch historical data
@@ -79,15 +85,29 @@ class TradingEngine {
 
   Future<void> _executeTrade(String side) async {
     try {
-      // For now, just print and maybe place a small test order
-      print('Executing $side order for $symbol');
-      // final result = await apiService.placeOrder(
-      //   symbol: symbol,
-      //   side: side,
-      //   type: 'MARKET',
-      //   quantity: '0.01', // Example quantity
-      // );
-      // print('Order result: $result');
+      if (_klines.isEmpty) {
+        print('No price data available for trade execution');
+        return;
+      }
+
+      final currentPrice = _klines.last.close;
+      final quantity = 0.01; // Example quantity - in real implementation, this would be calculated
+
+      // Create trade record
+      final trade = Trade(
+        symbol: symbol,
+        side: side,
+        price: currentPrice,
+        quantity: quantity,
+        timestamp: DateTime.now(),
+        status: 'simulated', // Since we're not actually placing orders yet
+        strategy: strategy.name,
+      );
+
+      _trades.add(trade);
+      _tradeController.add(_trades);
+
+      print('Recorded $side trade: ${trade.symbol} @ ${trade.price} (${trade.strategy})');
     } catch (e) {
       print('Trade execution error: $e');
     }
@@ -100,7 +120,8 @@ class TradingEngine {
   }
 
   void dispose() {
-    stop();
     _klineController.close();
+    _tradeController.close();
+    _wsSubscription?.cancel();
   }
 }

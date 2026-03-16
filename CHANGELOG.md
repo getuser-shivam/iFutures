@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.3] - 2026-03-16
+### Added
+- Trade History feature: Real-time display of executed trades with price, quantity, timestamp, and strategy information.
+- Trade model for storing transaction records.
+- Trade history widget in dashboard showing buy/sell trades with visual indicators.
+- Trading engine now records simulated trades for performance tracking.
+
+### Fixed
+- Fixed duplicate dispose method in trading engine.
+- Fixed syntax error with extra closing brace.
+
 ## [1.0.2] - 2026-03-16
 ### Added
 - Dashboard status indicators: Bot running state and Engine load/ready/error status chips.

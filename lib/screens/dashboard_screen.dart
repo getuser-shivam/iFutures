@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../widgets/mode_selector.dart';
 import '../widgets/price_chart.dart';
+import '../widgets/trade_history.dart';
 import 'settings_screen.dart';
 
 class DashboardScreen extends ConsumerWidget {
@@ -88,6 +89,14 @@ class DashboardScreen extends ConsumerWidget {
             child: Padding(
               padding: EdgeInsets.symmetric(vertical: 20, horizontal: 8),
               child: PriceChart(),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            flex: 2,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+              child: const TradeHistory(),
             ),
           ),
           Padding(
