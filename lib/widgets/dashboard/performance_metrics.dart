@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/trade.dart';
 import '../../providers/trading_provider.dart';
 import '../../theme/app_theme.dart';
-import 'app_panel.dart';
+import '../common/app_panel.dart';
 
 class PerformanceMetrics extends ConsumerWidget {
   final String symbol;

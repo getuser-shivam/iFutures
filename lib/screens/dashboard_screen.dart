@@ -3,12 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../trading/manual_strategy.dart';
-import '../widgets/dashboard/app_panel.dart';
+import '../widgets/common/app_panel.dart';
 import '../widgets/dashboard/mode_selector.dart';
 import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_chart.dart';
 import '../widgets/dashboard/trade_history.dart';
 import '../widgets/dashboard/performance_metrics.dart';
+import '../widgets/dashboard/risk_summary_card.dart';
 import '../theme/app_theme.dart';
 import 'settings_screen.dart';
 import 'gallery_screen.dart';
@@ -144,6 +145,12 @@ class DashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: OpenPositionCard(symbol: symbol, latestPrice: latestPrice),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: RiskSummaryCard(),
                   ),
                 ),
                 SliverPadding(

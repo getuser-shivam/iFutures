@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/trading_provider.dart';
 import '../../theme/app_theme.dart';
-import 'app_panel.dart';
+import '../common/app_panel.dart';
 
 class OpenPositionCard extends ConsumerWidget {
   final String symbol;

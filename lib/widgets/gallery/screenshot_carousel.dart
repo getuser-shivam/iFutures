@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import '../../theme/app_theme.dart';
-import '../dashboard/app_panel.dart';
+import '../common/app_panel.dart';
 
 class ScreenshotCarousel extends StatefulWidget {
   const ScreenshotCarousel({super.key});

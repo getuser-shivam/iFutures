@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/gallery/screenshot_carousel.dart';
 import '../theme/app_theme.dart';
-import '../widgets/dashboard/app_panel.dart';
+import '../widgets/common/app_panel.dart';
 
 class GalleryScreen extends StatelessWidget {
   const GalleryScreen({super.key});

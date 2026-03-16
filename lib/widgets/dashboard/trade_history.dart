@@ -4,7 +4,7 @@ import 'package:intl/intl.dart';
 import '../../providers/trading_provider.dart';
 import '../../models/trade.dart';
 import '../../theme/app_theme.dart';
-import 'app_panel.dart';
+import '../common/app_panel.dart';
 
 class TradeHistory extends ConsumerWidget {
   final String symbol;

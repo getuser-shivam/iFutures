@@ -11,6 +11,7 @@ Last updated: 2026-03-16
 - [ ] Add a lightweight price alert system with toast notifications.
 - [ ] Add a daily performance summary card (PnL, win rate, drawdown).
 - [ ] Add a trade export option (CSV) for analysis.
+- [ ] Add a connection health badge and latency indicator for the market stream.
 
 ## Later
 - [ ] Backtesting engine using historical klines.
@@ -23,3 +24,7 @@ Last updated: 2026-03-16
 - [x] Candlestick chart (OHLC) in the dashboard.
 - [x] Multi-symbol selection in the app bar.
 - [x] Open position card with unrealized PnL and SL/TP preview.
+- [x] Unified dark theme, typography system, and dashboard card styling.
+- [x] Shared `AppPanel` component moved to `lib/widgets/common`.
+- [x] Settings and gallery screens updated to match the new design system.
+- [x] Compact risk summary card (SL/TP/qty) for quick visibility.

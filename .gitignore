@@ -43,3 +43,13 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Local artifacts and helper scripts
+analyzer_*.txt
+build_*.txt
+build_report*.txt
+debug_*.txt
+run_debug_output.txt
+pub_get_output.txt
+capture_*.ps1
+list_windows*.ps1
