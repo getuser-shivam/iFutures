@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
+import '../trading/strategy.dart';
 import '../models/connection_status.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
@@ -28,6 +29,7 @@ class DashboardScreen extends ConsumerWidget {
     final currentStrategy = ref.watch(currentStrategyProvider);
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
+    final signalAsync = ref.watch(signalStreamProvider(symbol));
     const symbols = ['GALAUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'];
     final latestPrice = ticker.maybeWhen(
       data: (data) => double.tryParse(data['c']?.toString() ?? ''),
@@ -203,11 +205,24 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Available for override while ${currentStrategy?.name ?? 'strategy'} is running. Manual actions will start the bot if stopped.',
+                            'Manual actions are available in every mode. Auto mode uses the selected strategy; manual mode lets you execute any action.',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
                             ),
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: [
+                              _buildSignalPill(signalAsync),
+                              if (currentStrategy != null)
+                                StatusPill(
+                                  label: 'Source: ${currentStrategy.name}',
+                                  color: AppColors.glowCyan,
+                                ),
+                            ],
                           ),
                           const SizedBox(height: 12),
                           Row(
@@ -222,8 +237,8 @@ class DashboardScreen extends ConsumerWidget {
                                       : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
-                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
-                                            engine.manualEnterLong();
+                                            await _ensureMarketData(engine);
+                                            await engine.manualEnterLong();
                                           }
                                         },
                                 ),
@@ -239,8 +254,8 @@ class DashboardScreen extends ConsumerWidget {
                                       : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
-                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
-                                            engine.manualEnterShort();
+                                            await _ensureMarketData(engine);
+                                            await engine.manualEnterShort();
                                           }
                                         },
                                 ),
@@ -256,8 +271,8 @@ class DashboardScreen extends ConsumerWidget {
                                       : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
-                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
-                                            engine.manualClose();
+                                            await _ensureMarketData(engine);
+                                            await engine.manualClose();
                                           }
                                         },
                                 ),
@@ -407,15 +422,56 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _ensureTradingEnabled(
-    WidgetRef ref,
-    String symbol,
-    bool isRunning,
+  Future<void> _ensureMarketData(
     TradingEngine engine,
   ) async {
-    if (isRunning) return;
-    ref.read(isBotRunningProvider(symbol).notifier).state = true;
-    await engine.enableTrading();
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
+  }
+
+  Widget _buildSignalPill(AsyncValue<TradingSignal?> signalAsync) {
+    return signalAsync.when(
+      data: (signal) {
+        final label = _signalLabel(signal);
+        final color = _signalColor(signal);
+        return StatusPill(label: 'Signal: $label', color: color);
+      },
+      loading: () => const StatusPill(
+        label: 'Signal: ...',
+        color: AppColors.textSecondary,
+      ),
+      error: (_, __) => const StatusPill(
+        label: 'Signal: Error',
+        color: AppColors.warning,
+      ),
+    );
+  }
+
+  String _signalLabel(TradingSignal? signal) {
+    switch (signal) {
+      case TradingSignal.buy:
+        return 'BUY';
+      case TradingSignal.sell:
+        return 'SELL';
+      case TradingSignal.hold:
+        return 'HOLD';
+      default:
+        return '--';
+    }
+  }
+
+  Color _signalColor(TradingSignal? signal) {
+    switch (signal) {
+      case TradingSignal.buy:
+        return AppColors.positive;
+      case TradingSignal.sell:
+        return AppColors.negative;
+      case TradingSignal.hold:
+        return AppColors.textSecondary;
+      default:
+        return AppColors.textMuted;
+    }
   }
 
   Widget _buildStatusRow(

@@ -17,23 +17,26 @@ class TradingEngine {
 
   List<Kline> _klines = [];
   List<Trade> _trades = [];
-  bool _isTradingEnabled = false;
+  bool _isAutoTradingEnabled = false;
   bool _isStreaming = false;
   Position? _openPosition;
   StreamSubscription? _wsSubscription;
   Timer? _connectionTimer;
   DateTime? _lastMessageAt;
   int? _lastLatencyMs;
+  TradingSignal? _lastSignal;
   
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
   final _positionController = StreamController<Position?>.broadcast();
   final _connectionController = StreamController<ConnectionStatus>.broadcast();
+  final _signalController = StreamController<TradingSignal?>.broadcast();
   
   Stream<List<Kline>> get klineStream => _klineController.stream;
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
   Stream<Position?> get positionStream => _positionController.stream;
   Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
+  Stream<TradingSignal?> get signalStream => _signalController.stream;
 
   TradingEngine({
     required this.apiService,
@@ -44,16 +47,18 @@ class TradingEngine {
   });
 
   bool get isStreaming => _isStreaming;
-  bool get isTradingEnabled => _isTradingEnabled;
+  bool get isTradingEnabled => _isAutoTradingEnabled;
   Position? get openPosition => _openPosition;
   List<Kline> get klines => _klines;
   List<Trade> get trades => _trades;
+  TradingSignal? get lastSignal => _lastSignal;
 
   Future<void> startMarketData() async {
     if (_isStreaming) return;
     _isStreaming = true;
     _positionController.add(_openPosition);
     _connectionController.add(ConnectionStatus.connecting());
+    _signalController.add(_lastSignal);
     _startConnectionTicker();
 
     // 1. Fetch historical data
@@ -72,8 +77,8 @@ class TradingEngine {
       _updateKlines(kline);
       _checkRisk(kline.close);
       
-      // If candle is closed, evaluate strategy
-      if (event['k']['x'] == true && _isTradingEnabled) {
+      // If candle is closed, evaluate strategy regardless of auto execution
+      if (event['k']['x'] == true) {
         _evaluateStrategy();
       }
     }, onError: (e) {
@@ -88,14 +93,14 @@ class TradingEngine {
   }
 
   Future<void> enableTrading() async {
-    _isTradingEnabled = true;
+    _isAutoTradingEnabled = true;
     if (!_isStreaming) {
       await startMarketData();
     }
   }
 
   void disableTrading({String reason = 'manual_stop'}) {
-    _isTradingEnabled = false;
+    _isAutoTradingEnabled = false;
     if (_openPosition != null && _klines.isNotEmpty) {
       _closePosition(_klines.last.close, reason);
     }
@@ -117,10 +122,11 @@ class TradingEngine {
   }
 
   Future<void> _evaluateStrategy() async {
-    if (!_isTradingEnabled) return;
-
     final signal = await strategy.evaluate(_klines);
     print('Strategy signal: $signal');
+    _lastSignal = signal;
+    _signalController.add(signal);
+    if (!_isAutoTradingEnabled) return;
     
     if (signal == TradingSignal.buy) {
       _handleSignal(PositionSide.long);
@@ -133,20 +139,26 @@ class TradingEngine {
     _handleSignalWithReason(desiredSide, 'strategy');
   }
 
-  void manualEnterLong() {
-    if (!_isTradingEnabled) return;
+  Future<void> manualEnterLong() async {
+    await _ensureMarketData();
     _handleSignalWithReason(PositionSide.long, 'manual');
   }
 
-  void manualEnterShort() {
-    if (!_isTradingEnabled) return;
+  Future<void> manualEnterShort() async {
+    await _ensureMarketData();
     _handleSignalWithReason(PositionSide.short, 'manual');
   }
 
-  void manualClose() {
-    if (!_isTradingEnabled) return;
+  Future<void> manualClose() async {
+    await _ensureMarketData();
     if (_openPosition != null && _klines.isNotEmpty) {
       _closePosition(_klines.last.close, 'manual');
+    }
+  }
+
+  Future<void> _ensureMarketData() async {
+    if (!_isStreaming) {
+      await startMarketData();
     }
   }
 
@@ -243,7 +255,6 @@ class TradingEngine {
   }
 
   void _checkRisk(double currentPrice) {
-    if (!_isTradingEnabled) return;
     final position = _openPosition;
     if (position == null) return;
 
@@ -290,6 +301,7 @@ class TradingEngine {
     _tradeController.close();
     _positionController.close();
     _connectionController.close();
+    _signalController.close();
     stopMarketData();
   }
 

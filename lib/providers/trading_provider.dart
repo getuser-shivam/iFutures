@@ -167,6 +167,21 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((ref, sy
   }
 });
 
+final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((ref, symbol) async* {
+  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+  if (engineAsync is AsyncData<TradingEngine>) {
+    final engine = engineAsync.value;
+    yield engine.lastSignal;
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
+    yield* engine.signalStream;
+  } else {
+    yield null;
+  }
+});
+
 final connectionStatusProvider = StreamProvider.family<ConnectionStatus, String>((ref, symbol) async* {
   final engineAsync = ref.watch(tradingEngineProvider(symbol));
 
