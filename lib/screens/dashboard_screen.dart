@@ -4,6 +4,8 @@ import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../models/connection_status.dart';
 import '../widgets/common/app_panel.dart';
+import '../widgets/common/action_button.dart';
+import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
 import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_chart.dart';
@@ -211,7 +213,7 @@ class DashboardScreen extends ConsumerWidget {
                           Row(
                             children: [
                               Expanded(
-                                child: _ActionButton(
+                                child: ActionButton(
                                   label: 'LONG',
                                   icon: Icons.arrow_upward,
                                   color: AppColors.positive,
@@ -226,7 +228,7 @@ class DashboardScreen extends ConsumerWidget {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: _ActionButton(
+                                child: ActionButton(
                                   label: 'SHORT',
                                   icon: Icons.arrow_downward,
                                   color: AppColors.negative,
@@ -241,7 +243,7 @@ class DashboardScreen extends ConsumerWidget {
                               ),
                               const SizedBox(width: 12),
                               Expanded(
-                                child: _ActionButton(
+                                child: ActionButton(
                                   label: 'CLOSE',
                                   icon: Icons.close,
                                   color: AppColors.textSecondary,
@@ -268,7 +270,7 @@ class DashboardScreen extends ConsumerWidget {
                       child: Row(
                         children: [
                           Expanded(
-                            child: _ActionButton(
+                            child: ActionButton(
                               label: 'START BOT',
                               icon: Icons.play_arrow,
                               color: AppColors.positive,
@@ -285,7 +287,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(width: 16),
                           Expanded(
-                            child: _ActionButton(
+                            child: ActionButton(
                               label: 'STOP BOT',
                               icon: Icons.stop_circle_outlined,
                               color: AppColors.negative,
@@ -408,20 +410,20 @@ class DashboardScreen extends ConsumerWidget {
       spacing: 12,
       runSpacing: 8,
       children: [
-        _StatusPill(
+        StatusPill(
           label: isRunning ? 'Bot: Running' : 'Bot: Stopped',
           color: isRunning ? AppColors.positive : AppColors.negative,
         ),
         engineAsync.when(
-          data: (_) => const _StatusPill(
+          data: (_) => const StatusPill(
             label: 'Engine: Ready',
             color: AppColors.positive,
           ),
-          loading: () => const _StatusPill(
+          loading: () => const StatusPill(
             label: 'Engine: Loading...',
             color: AppColors.warning,
           ),
-          error: (e, _) => const _StatusPill(
+          error: (e, _) => const StatusPill(
             label: 'Engine: Error',
             color: AppColors.negative,
           ),
@@ -441,20 +443,20 @@ class DashboardScreen extends ConsumerWidget {
 
         switch (data.state) {
           case MarketConnectionState.connecting:
-            return const _StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber);
+            return const StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber);
           case MarketConnectionState.connected:
-            return _StatusPill(label: 'Market: Live • $latency', color: AppColors.glowCyan);
+            return StatusPill(label: 'Market: Live | $latency', color: AppColors.glowCyan);
           case MarketConnectionState.stale:
-            return _StatusPill(
-              label: 'Market: Slow • ${ageSeconds ?? '-'}s',
+            return StatusPill(
+              label: 'Market: Slow | ${ageSeconds ?? '-'}s',
               color: AppColors.warning,
             );
           case MarketConnectionState.disconnected:
-            return const _StatusPill(label: 'Market: Offline', color: AppColors.negative);
+            return const StatusPill(label: 'Market: Offline', color: AppColors.negative);
         }
       },
-      loading: () => const _StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber),
-      error: (e, _) => const _StatusPill(label: 'Market: Error', color: AppColors.negative),
+      loading: () => const StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber),
+      error: (e, _) => const StatusPill(label: 'Market: Error', color: AppColors.negative),
     );
   }
 }
@@ -543,100 +545,4 @@ class _SymbolDropdown extends StatelessWidget {
   }
 }
 
-class _StatusPill extends StatelessWidget {
-  final String label;
-  final Color color;
 
-  const _StatusPill({
-    required this.label,
-    required this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.15),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withOpacity(0.6)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w600,
-          fontSize: 12,
-        ),
-      ),
-    );
-  }
-}
-
-class _ActionButton extends StatelessWidget {
-  final String label;
-  final IconData icon;
-  final Color color;
-  final VoidCallback? onPressed;
-
-  const _ActionButton({
-    required this.label,
-    required this.icon,
-    required this.color,
-    required this.onPressed,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isEnabled = onPressed != null;
-
-    return Opacity(
-      opacity: isEnabled ? 1 : 0.45,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(14),
-          onTap: onPressed,
-          child: Ink(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  color.withOpacity(0.95),
-                  color.withOpacity(0.7),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: [
-                BoxShadow(
-                  color: color.withOpacity(0.35),
-                  blurRadius: 16,
-                  offset: const Offset(0, 8),
-                ),
-              ],
-            ),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 12),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(icon, color: Colors.white, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
