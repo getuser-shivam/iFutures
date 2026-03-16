@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:carousel_slider/carousel_slider.dart';
+import '../../theme/app_theme.dart';
+import '../dashboard/app_panel.dart';
 
 class ScreenshotCarousel extends StatefulWidget {
   const ScreenshotCarousel({super.key});
@@ -31,37 +33,33 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blueGrey.shade800,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return AppPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.photo_library, color: Colors.white70),
+              const Icon(Icons.photo_library, color: AppColors.textSecondary),
               const SizedBox(width: 8),
               const Text(
                 'App Evolution',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade700,
+                  color: AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.border),
                 ),
                 child: Text(
                   '${_currentIndex + 1} / ${_screenshots.length}',
-                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
                 ),
               ),
             ],
@@ -83,27 +81,27 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                 builder: (BuildContext context) {
                   return Container(
                     width: MediaQuery.of(context).size.width,
-                    margin: const EdgeInsets.symmetric(horizontal: 5.0),
+                    margin: const EdgeInsets.symmetric(horizontal: 6.0),
                     decoration: BoxDecoration(
-                      color: Colors.blueGrey.shade700,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blue.shade400, width: 2),
+                      color: AppColors.surfaceAlt,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: AppColors.border, width: 1.2),
                     ),
                     child: Column(
                       children: [
                         Expanded(
                           child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
                             child: Image.asset(
                               screenshot['path']!,
                               fit: BoxFit.contain,
                               errorBuilder: (context, error, stackTrace) {
                                 return Container(
-                                  color: Colors.blueGrey.shade600,
+                                  color: AppColors.surface,
                                   child: const Center(
                                     child: Icon(
                                       Icons.image_not_supported,
-                                      color: Colors.white54,
+                                      color: AppColors.textMuted,
                                       size: 48,
                                     ),
                                   ),
@@ -115,8 +113,8 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                         Container(
                           padding: const EdgeInsets.all(12),
                           decoration: const BoxDecoration(
-                            color: Colors.black26,
-                            borderRadius: BorderRadius.vertical(bottom: Radius.circular(6)),
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -124,16 +122,16 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                               Text(
                                 screenshot['title']!,
                                 style: const TextStyle(
-                                  color: Colors.white,
+                                  color: AppColors.textPrimary,
                                   fontSize: 14,
-                                  fontWeight: FontWeight.bold,
+                                  fontWeight: FontWeight.w700,
                                 ),
                               ),
                               const SizedBox(height: 4),
                               Text(
                                 screenshot['description']!,
                                 style: const TextStyle(
-                                  color: Colors.white70,
+                                  color: AppColors.textSecondary,
                                   fontSize: 12,
                                 ),
                               ),
@@ -158,8 +156,8 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   color: _currentIndex == entry.key
-                      ? Colors.blue.shade400
-                      : Colors.white.withOpacity(0.4),
+                      ? AppColors.glowCyan
+                      : AppColors.textMuted.withOpacity(0.6),
                 ),
               );
             }).toList(),

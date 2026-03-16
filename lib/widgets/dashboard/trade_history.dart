@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../providers/trading_provider.dart';
 import '../../models/trade.dart';
+import '../../theme/app_theme.dart';
+import 'app_panel.dart';
 
 class TradeHistory extends ConsumerWidget {
   final String symbol;
@@ -13,32 +15,27 @@ class TradeHistory extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final trades = ref.watch(tradeStreamProvider(symbol));
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blueGrey.shade800,
-        borderRadius: BorderRadius.circular(12),
-      ),
+    return AppPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.history, color: Colors.white70),
+              const Icon(Icons.history, color: AppColors.textSecondary, size: 20),
               const SizedBox(width: 8),
               const Text(
                 'Trade History',
                 style: TextStyle(
-                  color: Colors.white,
+                  color: AppColors.textPrimary,
                   fontSize: 18,
-                  fontWeight: FontWeight.bold,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
               const Spacer(),
               trades.when(
                 data: (tradeList) => Text(
                   '${tradeList.length} trades',
-                  style: const TextStyle(color: Colors.white70),
+                  style: const TextStyle(color: AppColors.textSecondary),
                 ),
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
@@ -46,34 +43,35 @@ class TradeHistory extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 16),
-          Expanded(
-            child: trades.when(
-              data: (tradeList) {
-                if (tradeList.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      'No trades yet',
-                      style: TextStyle(color: Colors.white54),
-                    ),
-                  );
-                }
-
-                return ListView.builder(
-                  itemCount: tradeList.length,
-                  itemBuilder: (context, index) {
-                    final trade = tradeList[tradeList.length - 1 - index]; // Show newest first
-                    return _buildTradeItem(trade);
-                  },
+          trades.when(
+            data: (tradeList) {
+              if (tradeList.isEmpty) {
+                return const Center(
+                  child: Text(
+                    'No trades yet',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
                 );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(),
-              ),
-              error: (error, stack) => Center(
-                child: Text(
-                  'Error loading trades: $error',
-                  style: const TextStyle(color: Colors.red),
-                ),
+              }
+
+              return ListView.separated(
+                itemCount: tradeList.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                separatorBuilder: (_, __) => const SizedBox(height: 10),
+                itemBuilder: (context, index) {
+                  final trade = tradeList[tradeList.length - 1 - index]; // Show newest first
+                  return _buildTradeItem(trade);
+                },
+              );
+            },
+            loading: () => const Center(
+              child: CircularProgressIndicator(),
+            ),
+            error: (error, stack) => Center(
+              child: Text(
+                'Error loading trades: $error',
+                style: const TextStyle(color: AppColors.negative),
               ),
             ),
           ),
@@ -84,19 +82,18 @@ class TradeHistory extends ConsumerWidget {
 
   Widget _buildTradeItem(Trade trade) {
     final isBuy = trade.side == 'BUY';
-    final color = isBuy ? Colors.green : Colors.red;
+    final color = isBuy ? AppColors.positive : AppColors.negative;
     final isExit = trade.kind == 'EXIT';
     final badgeText = isExit && trade.reason != null && trade.reason!.isNotEmpty
         ? trade.reason!.replaceAll('_', ' ').toUpperCase()
         : trade.kind;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade700,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withOpacity(0.3)),
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -116,14 +113,14 @@ class TradeHistory extends ConsumerWidget {
                     '${trade.side} ${trade.symbol} (${trade.kind})',
                     style: TextStyle(
                       color: color,
-                      fontWeight: FontWeight.bold,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ],
               ),
               Text(
                 DateFormat('HH:mm:ss').format(trade.timestamp),
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
             ],
           ),
@@ -133,11 +130,11 @@ class TradeHistory extends ConsumerWidget {
             children: [
               Text(
                 'Price: \$${trade.price.toStringAsFixed(6)}',
-                style: const TextStyle(color: Colors.white),
+                style: tabularFigures(const TextStyle(color: AppColors.textPrimary)),
               ),
               Text(
                 'Qty: ${trade.quantity}',
-                style: const TextStyle(color: Colors.white70),
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
             ],
           ),
@@ -147,17 +144,17 @@ class TradeHistory extends ConsumerWidget {
             children: [
               Text(
                 'Strategy: ${trade.strategy}',
-                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: trade.status == 'simulated' ? Colors.orange.shade800 : Colors.green.shade800,
-                  borderRadius: BorderRadius.circular(4),
+                  color: trade.status == 'simulated' ? AppColors.warning : AppColors.glowCyan,
+                  borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   badgeText,
-                  style: const TextStyle(color: Colors.white, fontSize: 10),
+                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
                 ),
               ),
             ],
@@ -167,9 +164,9 @@ class TradeHistory extends ConsumerWidget {
             Text(
               'PnL: ${trade.realizedPnl!.toStringAsFixed(4)}',
               style: TextStyle(
-                color: trade.realizedPnl! >= 0 ? Colors.greenAccent : Colors.redAccent,
+                color: trade.realizedPnl! >= 0 ? AppColors.positive : AppColors.negative,
                 fontSize: 12,
-                fontWeight: FontWeight.bold,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ],

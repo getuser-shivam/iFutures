@@ -4,6 +4,7 @@ import '../../providers/trading_provider.dart';
 import '../../trading/algo_strategy.dart';
 import '../../trading/ai_strategy.dart';
 import '../../trading/manual_strategy.dart';
+import '../../theme/app_theme.dart';
 
 class ModeSelector extends ConsumerWidget {
   const ModeSelector({super.key});
@@ -14,10 +15,11 @@ class ModeSelector extends ConsumerWidget {
     if (currentStrategy == null) return const SizedBox.shrink();
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        color: Colors.blueGrey.shade800,
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: AppColors.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -29,7 +31,7 @@ class ModeSelector extends ConsumerWidget {
             currentStrategy is RsiStrategy,
             () => ref.read(currentStrategyProvider.notifier).state = RsiStrategy(),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           _buildOption(
             context,
             ref,
@@ -39,7 +41,7 @@ class ModeSelector extends ConsumerWidget {
               apiUrl: 'https://your-ai-api.com/analyze',
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 6),
           _buildOption(
             context,
             ref,
@@ -53,20 +55,39 @@ class ModeSelector extends ConsumerWidget {
   }
 
   Widget _buildOption(BuildContext context, WidgetRef ref, String label, bool isSelected, VoidCallback onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.orangeAccent : Colors.transparent,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: isSelected ? Colors.orangeAccent : Colors.white24),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.black : Colors.white,
-            fontWeight: FontWeight.bold,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      curve: Curves.easeOut,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.glowAmber : Colors.transparent,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: isSelected ? AppColors.glowAmber : AppColors.border,
+            ),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.glowAmber.withOpacity(0.35),
+                      blurRadius: 12,
+                      offset: const Offset(0, 6),
+                    ),
+                  ]
+                : [],
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: isSelected ? Colors.black : AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              fontSize: 12,
+            ),
           ),
         ),
       ),

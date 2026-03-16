@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import '../widgets/gallery/screenshot_carousel.dart';
+import '../theme/app_theme.dart';
+import '../widgets/dashboard/app_panel.dart';
 
 class GalleryScreen extends StatelessWidget {
   const GalleryScreen({super.key});
@@ -9,80 +11,76 @@ class GalleryScreen extends StatelessWidget {
     return Scaffold(
       appBar: AppBar(
         title: const Text('App Gallery'),
-        backgroundColor: Colors.blueGrey.shade900,
       ),
       body: Container(
-        decoration: BoxDecoration(
+        decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.blueGrey.shade900, Colors.black],
+            colors: [AppColors.backgroundTop, AppColors.backgroundBottom],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
         ),
-        child: const SingleChildScrollView(
-          padding: EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'iFutures Development Evolution',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 24,
-                  fontWeight: FontWeight.bold,
-                ),
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: const [
+            Text(
+              'iFutures Development Evolution',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 24,
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 8),
-              Text(
-                'Track the progress of our automated trading application through its various development stages.',
-                style: TextStyle(
-                  color: Colors.white70,
-                  fontSize: 16,
-                ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              'Track the progress of the trading experience through key releases and UI milestones.',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 14,
               ),
-              SizedBox(height: 24),
-              ScreenshotCarousel(),
-              SizedBox(height: 24),
-              Text(
-                'Key Milestones',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                ),
+            ),
+            SizedBox(height: 20),
+            ScreenshotCarousel(),
+            SizedBox(height: 24),
+            Text(
+              'Key Milestones',
+              style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 20,
+                fontWeight: FontWeight.w700,
               ),
-              SizedBox(height: 16),
-              _MilestoneCard(
-                version: '1.0.3',
-                date: '2026-03-16',
-                features: [
-                  'Real-time trade history with buy/sell indicators',
-                  'Trade tracking with price, quantity, and strategy info',
-                  'Enhanced dashboard with trade monitoring',
-                  'Versioned screenshot gallery',
-                ],
-              ),
-              _MilestoneCard(
-                version: '1.0.2',
-                date: '2026-03-16',
-                features: [
-                  'Bot and engine status indicators',
-                  'Real-time status chips in dashboard',
-                  'Improved UI feedback and monitoring',
-                ],
-              ),
-              _MilestoneCard(
-                version: '1.0.1',
-                date: '2026-03-16',
-                features: [
-                  'Basic trading dashboard with price charts',
-                  'Strategy selection (ALGO/AI modes)',
-                  'Bot start/stop controls',
-                  'Settings management and API configuration',
-                ],
-              ),
-            ],
-          ),
+            ),
+            SizedBox(height: 16),
+            _MilestoneCard(
+              version: '1.0.3',
+              date: '2026-03-16',
+              features: [
+                'Real-time trade history with buy/sell indicators',
+                'Trade tracking with price, quantity, and strategy info',
+                'Enhanced dashboard with trade monitoring',
+                'Versioned screenshot gallery',
+              ],
+            ),
+            _MilestoneCard(
+              version: '1.0.2',
+              date: '2026-03-16',
+              features: [
+                'Bot and engine status indicators',
+                'Real-time status chips in dashboard',
+                'Improved UI feedback and monitoring',
+              ],
+            ),
+            _MilestoneCard(
+              version: '1.0.1',
+              date: '2026-03-16',
+              features: [
+                'Basic trading dashboard with price charts',
+                'Strategy selection (ALGO/AI modes)',
+                'Bot start/stop controls',
+                'Settings management and API configuration',
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -102,29 +100,23 @@ class _MilestoneCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.blueGrey.shade800,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.blue.shade400, width: 1),
-      ),
+    return AppPanel(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade700,
+                  color: AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.glowCyan),
                 ),
                 child: Text(
                   'v$version',
                   style: const TextStyle(
-                    color: Colors.white,
+                    color: AppColors.glowCyan,
                     fontWeight: FontWeight.bold,
                   ),
                 ),
@@ -133,34 +125,35 @@ class _MilestoneCard extends StatelessWidget {
               Text(
                 date,
                 style: const TextStyle(
-                  color: Colors.white70,
+                  color: AppColors.textSecondary,
                   fontSize: 14,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 12),
-          ...features.map((feature) => Padding(
-            padding: const EdgeInsets.only(bottom: 4),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  '- ',
-                  style: TextStyle(color: Colors.greenAccent),
-                ),
-                Expanded(
-                  child: Text(
-                    feature,
-                    style: const TextStyle(color: Colors.white),
+          ...features.map(
+            (feature) => Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    '- ',
+                    style: TextStyle(color: AppColors.glowAmber),
                   ),
-                ),
-              ],
+                  Expanded(
+                    child: Text(
+                      feature,
+                      style: const TextStyle(color: AppColors.textPrimary),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          )),
+          ),
         ],
       ),
     );
   }
 }
-

@@ -2,6 +2,7 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/trading_provider.dart';
+import '../../theme/app_theme.dart';
 
 class PriceChart extends ConsumerWidget {
   final String symbol;
@@ -14,7 +15,14 @@ class PriceChart extends ConsumerWidget {
 
     return klines.when(
       data: (data) {
-        if (data.isEmpty) return const Center(child: Text('Loading Market Data...'));
+        if (data.isEmpty) {
+          return const Center(
+            child: Text(
+              'Loading Market Data...',
+              style: TextStyle(color: AppColors.textSecondary),
+            ),
+          );
+        }
         
         // Use last 50 klines for the chart
         final recentData = data.length > 50 ? data.sublist(data.length - 50) : data;
@@ -35,7 +43,10 @@ class PriceChart extends ConsumerWidget {
             gridData: FlGridData(
               show: true,
               drawVerticalLine: false,
-              getDrawingHorizontalLine: (value) => FlLine(color: Colors.white10, strokeWidth: 1),
+              getDrawingHorizontalLine: (value) => const FlLine(
+                color: AppColors.border,
+                strokeWidth: 1,
+              ),
             ),
             titlesData: const FlTitlesData(show: false),
             borderData: FlBorderData(show: false),
@@ -46,7 +57,12 @@ class PriceChart extends ConsumerWidget {
         );
       },
       loading: () => const Center(child: CircularProgressIndicator()),
-      error: (e, s) => Center(child: Text('Chart Error: $e')),
+      error: (e, s) => Center(
+        child: Text(
+          'Chart Error: $e',
+          style: const TextStyle(color: AppColors.negative),
+        ),
+      ),
     );
   }
 }

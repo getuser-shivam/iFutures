@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'screens/dashboard_screen.dart';
+import 'theme/app_theme.dart';
 
 void main() {
   runApp(
@@ -18,11 +19,7 @@ class IFuturesApp extends StatelessWidget {
     return MaterialApp(
       title: 'iFutures Bot',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        primarySwatch: Colors.blueGrey,
-        useMaterial3: true,
-      ),
+      theme: AppTheme.dark(),
       home: const DashboardScreen(),
     );
   }

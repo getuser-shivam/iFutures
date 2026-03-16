@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
+import '../theme/app_theme.dart';
+import '../widgets/dashboard/app_panel.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -34,10 +36,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _loadSettings() async {
     final settings = ref.read(settingsServiceProvider);
     await settings.init();
-    
+
     final apiKey = await settings.getApiKey();
     final apiSecret = await settings.getApiSecret();
-    
+
     setState(() {
       _apiKeyController.text = apiKey ?? '';
       _apiSecretController.text = apiSecret ?? '';
@@ -105,7 +107,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Settings saved successfully')),
       );
-      // Invalidate providers to force refresh with new settings
       ref.invalidate(binanceApiProvider);
       ref.invalidate(binanceWsProvider);
       ref.invalidate(riskSettingsProvider);
@@ -124,72 +125,120 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Bot Settings')),
       body: ListView(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(20),
         children: [
-          const Text('Binance API Configuration', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _apiKeyController,
-            decoration: const InputDecoration(labelText: 'API Key', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _apiSecretController,
-            decoration: const InputDecoration(labelText: 'API Secret', border: OutlineInputBorder()),
-            obscureText: true,
-          ),
-          const SizedBox(height: 16),
-          SwitchListTile(
-            title: const Text('Use Testnet'),
-            value: _isTestnet,
-            onChanged: (val) => setState(() => _isTestnet = val),
-          ),
-          const SizedBox(height: 32),
-          const Text('AI Strategy Configuration', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _aiUrlController,
-            decoration: const InputDecoration(labelText: 'AI Analysis URL', border: OutlineInputBorder()),
-          ),
-          const SizedBox(height: 32),
-          const Text('Risk Management', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _stopLossController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Stop Loss (%)',
-              border: OutlineInputBorder(),
+          _SettingsSection(
+            title: 'Binance API Configuration',
+            subtitle: 'Connect securely to your exchange account.',
+            child: Column(
+              children: [
+                TextField(
+                  controller: _apiKeyController,
+                  decoration: const InputDecoration(labelText: 'API Key'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _apiSecretController,
+                  decoration: const InputDecoration(labelText: 'API Secret'),
+                  obscureText: true,
+                ),
+                const SizedBox(height: 8),
+                SwitchListTile.adaptive(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Use Testnet'),
+                  value: _isTestnet,
+                  activeColor: AppColors.glowCyan,
+                  onChanged: (val) => setState(() => _isTestnet = val),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _takeProfitController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Take Profit (%)',
-              border: OutlineInputBorder(),
+          _SettingsSection(
+            title: 'AI Strategy Configuration',
+            subtitle: 'Provide the endpoint used for AI signal analysis.',
+            child: TextField(
+              controller: _aiUrlController,
+              decoration: const InputDecoration(labelText: 'AI Analysis URL'),
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _tradeQuantityController,
-            keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
-              labelText: 'Trade Quantity',
-              border: OutlineInputBorder(),
+          _SettingsSection(
+            title: 'Risk Management',
+            subtitle: 'Percent-based stops and fixed position sizing.',
+            child: Column(
+              children: [
+                TextField(
+                  controller: _stopLossController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Stop Loss (%)'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _takeProfitController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Take Profit (%)'),
+                ),
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _tradeQuantityController,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'Trade Quantity'),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 32),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              backgroundColor: Colors.blueAccent,
-              foregroundColor: Colors.white,
+          const SizedBox(height: 20),
+          AppPanel(
+            child: Row(
+              children: [
+                Expanded(
+                  child: ElevatedButton(
+                    onPressed: _saveSettings,
+                    child: const Text('SAVE SETTINGS'),
+                  ),
+                ),
+              ],
             ),
-            onPressed: _saveSettings,
-            child: const Text('SAVE SETTINGS', style: TextStyle(fontWeight: FontWeight.bold)),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SettingsSection extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _SettingsSection({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return AppPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 16,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            subtitle,
+            style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          child,
         ],
       ),
     );
