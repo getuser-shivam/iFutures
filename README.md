@@ -4,7 +4,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Versioning
 
-- **Current version:** `1.0.1+2` (see `pubspec.yaml`)
+- **Current version:** `1.0.2+3` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 
 ## Application Overview
