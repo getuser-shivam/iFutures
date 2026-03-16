@@ -203,7 +203,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Available for override while ${currentStrategy?.name ?? 'strategy'} is running.',
+                            'Available for override while ${currentStrategy?.name ?? 'strategy'} is running. Manual actions will start the bot if stopped.',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -217,11 +217,13 @@ class DashboardScreen extends ConsumerWidget {
                                   label: 'LONG',
                                   icon: Icons.arrow_upward,
                                   color: AppColors.positive,
-                                  onPressed: !isRunning || engineAsync.isLoading
+                                  onPressed: engineAsync.isLoading
                                       ? null
-                                      : () {
+                                      : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
-                                            engineAsync.value.manualEnterLong();
+                                            final engine = engineAsync.value;
+                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
+                                            engine.manualEnterLong();
                                           }
                                         },
                                 ),
@@ -232,11 +234,13 @@ class DashboardScreen extends ConsumerWidget {
                                   label: 'SHORT',
                                   icon: Icons.arrow_downward,
                                   color: AppColors.negative,
-                                  onPressed: !isRunning || engineAsync.isLoading
+                                  onPressed: engineAsync.isLoading
                                       ? null
-                                      : () {
+                                      : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
-                                            engineAsync.value.manualEnterShort();
+                                            final engine = engineAsync.value;
+                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
+                                            engine.manualEnterShort();
                                           }
                                         },
                                 ),
@@ -247,11 +251,13 @@ class DashboardScreen extends ConsumerWidget {
                                   label: 'CLOSE',
                                   icon: Icons.close,
                                   color: AppColors.textSecondary,
-                                  onPressed: !isRunning || engineAsync.isLoading
+                                  onPressed: engineAsync.isLoading
                                       ? null
-                                      : () {
+                                      : () async {
                                           if (engineAsync is AsyncData<TradingEngine>) {
-                                            engineAsync.value.manualClose();
+                                            final engine = engineAsync.value;
+                                            await _ensureTradingEnabled(ref, symbol, isRunning, engine);
+                                            engine.manualClose();
                                           }
                                         },
                                 ),
@@ -399,6 +405,17 @@ class DashboardScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  Future<void> _ensureTradingEnabled(
+    WidgetRef ref,
+    String symbol,
+    bool isRunning,
+    TradingEngine engine,
+  ) async {
+    if (isRunning) return;
+    ref.read(isBotRunningProvider(symbol).notifier).state = true;
+    await engine.enableTrading();
   }
 
   Widget _buildStatusRow(

@@ -224,7 +224,9 @@ class PerformanceMetrics extends ConsumerWidget {
     final metrics = _calculateMetrics(trades);
     final winRate = metrics['winRate'];
     final totalPnL = metrics['totalPnL'];
+    final totalTrades = metrics['totalTrades'];
 
+    if (totalTrades == 0) return AppColors.textMuted;
     if (winRate >= 60 && totalPnL > 0) return AppColors.positive;
     if (winRate >= 50 && totalPnL > 0) return AppColors.glowCyan;
     if (winRate >= 40) return AppColors.warning;
@@ -234,7 +236,9 @@ class PerformanceMetrics extends ConsumerWidget {
   String _getOverallPerformanceText(List<Trade> trades) {
     final metrics = _calculateMetrics(trades);
     final winRate = metrics['winRate'];
+    final totalTrades = metrics['totalTrades'];
 
+    if (totalTrades == 0) return 'NO DATA';
     if (winRate >= 70) return 'EXCELLENT';
     if (winRate >= 60) return 'GOOD';
     if (winRate >= 50) return 'FAIR';

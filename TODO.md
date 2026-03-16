@@ -31,3 +31,5 @@ Last updated: 2026-03-16
 - [x] Manual controls visible in all modes for quick override.
 - [x] Extract shared `ActionButton` and `StatusPill` widgets into common components.
 - [x] Persist last selected symbol across restarts.
+- [x] Manual controls auto-start the bot when used.
+- [x] Performance header shows NO DATA when no trades exist.
