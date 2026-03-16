@@ -16,33 +16,43 @@ iFutures is a multi-platform trading application that connects to Binance API an
 ## Screenshots
 
 ### Windows Desktop Application
-![iFutures Dashboard - GALAUSDT](screenshot_app.png)
+![iFutures Dashboard - GALAUSDT](screenshot_app_correct.png)
 *Current state: App showing live GALAUSDT price at 0.00363 USDT with strategy selector and bot controls*
 
 ## Development Status & Tasks
 
 ### ✅ Completed
 - [x] Flutter Windows build setup
-- [x] Basic dashboard UI layout
-- [x] Price chart widget (fl_chart integration)
+- [x] Basic dashboard UI layout with gradient background
+- [x] Real-time price display (GALAUSDT ticker)
+- [x] Price chart widget (fl_chart integration with line chart)
+- [x] Strategy mode selector (ALGO/AI toggle)
+- [x] Bot control buttons (START/STOP with state management)
+- [x] Settings screen navigation
 - [x] API key/secret storage (flutter_secure_storage)
-- [x] Strategy mode selector (ALGO/AI)
-- [x] Bot control buttons
+- [x] Binance API service with testnet support
+- [x] WebSocket service for real-time data
+- [x] Riverpod state management setup
+- [x] Trading engine with strategy evaluation
+- [x] RSI algorithmic strategy implementation
+- [x] AI strategy framework (API integration ready)
 
 ### 🔄 In Progress / TODO
-- [ ] **Bot Status Display**: Show real-time bot execution status
-- [ ] **Trade History**: Display completed trades with entry/exit prices
-- [ ] **Performance Metrics**: Win rate, total P&L, Sharpe ratio
-- [ ] **Risk Management**: Stop loss, take profit configuration
-- [ ] **WebSocket Integration**: Ensure real-time price updates working
-- [ ] **Binance API Connection**: Test live API calls
-- [ ] **AI Strategy Implementation**: Complete AI model integration
-- [ ] **Algo Strategy Logic**: Implement algorithmic trading rules
-- [ ] **Settings UI**: API configuration interface
-- [ ] **Error Handling**: Network errors, API failures
-- [ ] **Notifications**: Trade alerts and warnings
-- [ ] **Data Persistence**: Save bot state between sessions
-- [ ] **Mobile Support**: iOS/Android builds
+- [ ] **Bot Status Display**: Show real-time bot execution status and connection state
+- [ ] **Trade History**: Display completed trades with entry/exit prices and P&L
+- [ ] **Performance Metrics**: Win rate, total P&L, drawdown tracking
+- [ ] **Risk Management**: Stop loss, take profit, position sizing configuration
+- [ ] **Chart Enhancement**: Convert line chart to proper candlestick chart
+- [ ] **Order Execution**: Enable actual trade placement (currently commented out)
+- [ ] **Error Handling**: Network errors, API failures, connection drops
+- [ ] **Settings UI**: Complete API configuration interface with validation
+- [ ] **AI Strategy Completion**: Implement AI API response parsing and decision logic
+- [ ] **Multiple Symbols**: Support for additional trading pairs beyond GALAUSDT
+- [ ] **Data Persistence**: Save bot state, settings, and trade history between sessions
+- [ ] **Notifications**: Trade alerts, price alerts, and system notifications
+- [ ] **Backtesting**: Historical strategy testing and performance analysis
+- [ ] **Logging**: Comprehensive trade and error logging system
+- [ ] **Mobile Support**: iOS/Android builds and responsive design
 - [ ] **Testing**: Unit and widget tests
 
 ## Building and Running
