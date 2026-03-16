@@ -60,7 +60,7 @@ class PerformanceMetrics extends ConsumerWidget {
                     child: Padding(
                       padding: EdgeInsets.all(32),
                       child: Text(
-                        'No trades yet\nStart the bot to see performance metrics',
+                        'No trades yet.\nStart the bot or use Manual mode to generate trades.',
                         style: TextStyle(color: AppColors.textSecondary),
                         textAlign: TextAlign.center,
                       ),

@@ -334,10 +334,10 @@ class TradingEngine {
 
     final ageSeconds = DateTime.now().difference(_lastMessageAt!).inSeconds;
     final state = ageSeconds <= 3
-        ? ConnectionState.connected
+        ? MarketConnectionState.connected
         : ageSeconds <= 15
-            ? ConnectionState.stale
-            : ConnectionState.disconnected;
+            ? MarketConnectionState.stale
+            : MarketConnectionState.disconnected;
 
     _connectionController.add(
       ConnectionStatus(

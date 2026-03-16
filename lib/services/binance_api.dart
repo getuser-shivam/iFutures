@@ -35,7 +35,7 @@ class BinanceApiService {
     return digest.toString();
   }
 
-  Future<Map<String, dynamic>> _sendRequest(
+  Future<T> _sendRequest<T>(
     String method,
     String path, {
     Map<String, dynamic>? params,
@@ -54,7 +54,7 @@ class BinanceApiService {
         queryParameters: params,
         options: Options(method: method),
       );
-      return response.data;
+      return response.data as T;
     } on DioException catch (e) {
       print('Dio error: ${e.response?.data ?? e.message}');
       rethrow;
@@ -70,15 +70,15 @@ class BinanceApiService {
   // --- API Methods ---
 
   Future<Map<String, dynamic>> getAccountInfo() async {
-    return _sendRequest('GET', '/fapi/v2/account', signed: true);
+    return _sendRequest<Map<String, dynamic>>('GET', '/fapi/v2/account', signed: true);
   }
 
   Future<Map<String, dynamic>> getBalance() async {
-    return _sendRequest('GET', '/fapi/v2/balance', signed: true);
+    return _sendRequest<Map<String, dynamic>>('GET', '/fapi/v2/balance', signed: true);
   }
 
   Future<Map<String, dynamic>> getExchangeInfo() async {
-    return _sendRequest('GET', '/fapi/v1/exchangeInfo');
+    return _sendRequest<Map<String, dynamic>>('GET', '/fapi/v1/exchangeInfo');
   }
 
   Future<Map<String, dynamic>> placeOrder({
@@ -98,7 +98,7 @@ class BinanceApiService {
     if (price != null) params['price'] = price;
     if (stopPrice != null) params['stopPrice'] = stopPrice;
 
-    return _sendRequest('POST', '/fapi/v1/order', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/order', params: params, signed: true);
   }
 
   Future<Map<String, dynamic>> setLeverage({
@@ -109,7 +109,7 @@ class BinanceApiService {
       'symbol': symbol.toUpperCase(),
       'leverage': leverage,
     };
-    return _sendRequest('POST', '/fapi/v1/leverage', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/leverage', params: params, signed: true);
   }
 
   Future<Map<String, dynamic>> setMarginType({
@@ -120,7 +120,7 @@ class BinanceApiService {
       'symbol': symbol.toUpperCase(),
       'marginType': marginType.toUpperCase(),
     };
-    return _sendRequest('POST', '/fapi/v1/marginType', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/marginType', params: params, signed: true);
   }
 
   Future<List<dynamic>> getKlines({
@@ -134,7 +134,6 @@ class BinanceApiService {
     };
     if (limit != null) params['limit'] = limit;
 
-    final response = await _sendRequest('GET', '/fapi/v1/klines', params: params);
-    return response as List<dynamic>;
+    return _sendRequest<List<dynamic>>('GET', '/fapi/v1/klines', params: params);
   }
 }

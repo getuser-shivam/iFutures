@@ -48,8 +48,9 @@ class TradeHistory extends ConsumerWidget {
               if (tradeList.isEmpty) {
                 return const Center(
                   child: Text(
-                    'No trades yet',
+                    'No trades yet. Start the bot or use Manual mode.',
                     style: TextStyle(color: AppColors.textSecondary),
+                    textAlign: TextAlign.center,
                   ),
                 );
               }

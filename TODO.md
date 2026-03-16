@@ -28,3 +28,4 @@ Last updated: 2026-03-16
 - [x] Settings and gallery screens updated to match the new design system.
 - [x] Compact risk summary card (SL/TP/qty) for quick visibility.
 - [x] Connection health badge and latency indicator for the market stream.
+- [x] Manual controls visible in all modes for quick override.

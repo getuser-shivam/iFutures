@@ -4,6 +4,7 @@ import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
 import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
+import '../trading/algo_strategy.dart';
 import '../trading/strategy.dart';
 import '../models/kline.dart';
 import '../models/trade.dart';
@@ -62,8 +63,7 @@ final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
 });
 
 final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
-  final aiStrategy = ref.watch(aiStrategyProvider).valueOrNull;
-  return aiStrategy;
+  return RsiStrategy();
 });
 
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {

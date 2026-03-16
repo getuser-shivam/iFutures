@@ -1,4 +1,4 @@
-enum ConnectionState {
+enum MarketConnectionState {
   connecting,
   connected,
   stale,
@@ -6,7 +6,7 @@ enum ConnectionState {
 }
 
 class ConnectionStatus {
-  final ConnectionState state;
+  final MarketConnectionState state;
   final int? latencyMs;
   final DateTime? lastMessageAt;
 
@@ -16,9 +16,13 @@ class ConnectionStatus {
     this.lastMessageAt,
   });
 
-  factory ConnectionStatus.connecting() => const ConnectionStatus(state: ConnectionState.connecting);
+  factory ConnectionStatus.connecting() =>
+      const ConnectionStatus(state: MarketConnectionState.connecting);
 
   factory ConnectionStatus.disconnected({DateTime? lastMessageAt}) {
-    return ConnectionStatus(state: ConnectionState.disconnected, lastMessageAt: lastMessageAt);
+    return ConnectionStatus(
+      state: MarketConnectionState.disconnected,
+      lastMessageAt: lastMessageAt,
+    );
   }
 }

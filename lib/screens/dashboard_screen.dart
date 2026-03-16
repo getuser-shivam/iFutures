@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
-import '../trading/manual_strategy.dart';
 import '../models/connection_status.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/dashboard/mode_selector.dart';
@@ -25,7 +24,6 @@ class DashboardScreen extends ConsumerWidget {
     final isRunning = ref.watch(isBotRunningProvider(symbol));
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
     final currentStrategy = ref.watch(currentStrategyProvider);
-    final isManual = currentStrategy is ManualStrategy;
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
     const symbols = ['GALAUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'];
@@ -186,76 +184,83 @@ class DashboardScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                if (isManual)
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                    sliver: SliverToBoxAdapter(
-                      child: AppPanel(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'Manual Controls',
-                              style: TextStyle(
-                                color: AppColors.textPrimary,
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: AppPanel(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Manual Controls',
+                            style: TextStyle(
+                              color: AppColors.textPrimary,
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'Available for override while ${currentStrategy?.name ?? 'strategy'} is running.',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 12,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _ActionButton(
+                                  label: 'LONG',
+                                  icon: Icons.arrow_upward,
+                                  color: AppColors.positive,
+                                  onPressed: !isRunning || engineAsync.isLoading
+                                      ? null
+                                      : () {
+                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                            engineAsync.value.manualEnterLong();
+                                          }
+                                        },
+                                ),
                               ),
-                            ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: _ActionButton(
-                                    label: 'LONG',
-                                    icon: Icons.arrow_upward,
-                                    color: AppColors.positive,
-                                    onPressed: !isRunning || engineAsync.isLoading
-                                        ? null
-                                        : () {
-                                            if (engineAsync is AsyncData<TradingEngine>) {
-                                              engineAsync.value.manualEnterLong();
-                                            }
-                                          },
-                                  ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _ActionButton(
+                                  label: 'SHORT',
+                                  icon: Icons.arrow_downward,
+                                  color: AppColors.negative,
+                                  onPressed: !isRunning || engineAsync.isLoading
+                                      ? null
+                                      : () {
+                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                            engineAsync.value.manualEnterShort();
+                                          }
+                                        },
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _ActionButton(
-                                    label: 'SHORT',
-                                    icon: Icons.arrow_downward,
-                                    color: AppColors.negative,
-                                    onPressed: !isRunning || engineAsync.isLoading
-                                        ? null
-                                        : () {
-                                            if (engineAsync is AsyncData<TradingEngine>) {
-                                              engineAsync.value.manualEnterShort();
-                                            }
-                                          },
-                                  ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: _ActionButton(
+                                  label: 'CLOSE',
+                                  icon: Icons.close,
+                                  color: AppColors.textSecondary,
+                                  onPressed: !isRunning || engineAsync.isLoading
+                                      ? null
+                                      : () {
+                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                            engineAsync.value.manualClose();
+                                          }
+                                        },
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: _ActionButton(
-                                    label: 'CLOSE',
-                                    icon: Icons.close,
-                                    color: AppColors.textSecondary,
-                                    onPressed: !isRunning || engineAsync.isLoading
-                                        ? null
-                                        : () {
-                                            if (engineAsync is AsyncData<TradingEngine>) {
-                                              engineAsync.value.manualClose();
-                                            }
-                                          },
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
                     ),
                   ),
+                ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
                   sliver: SliverToBoxAdapter(
@@ -435,16 +440,16 @@ class DashboardScreen extends ConsumerWidget {
         final latency = data.latencyMs != null ? '${data.latencyMs}ms' : '--';
 
         switch (data.state) {
-          case ConnectionState.connecting:
+          case MarketConnectionState.connecting:
             return const _StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber);
-          case ConnectionState.connected:
+          case MarketConnectionState.connected:
             return _StatusPill(label: 'Market: Live • $latency', color: AppColors.glowCyan);
-          case ConnectionState.stale:
+          case MarketConnectionState.stale:
             return _StatusPill(
               label: 'Market: Slow • ${ageSeconds ?? '-'}s',
               color: AppColors.warning,
             );
-          case ConnectionState.disconnected:
+          case MarketConnectionState.disconnected:
             return const _StatusPill(label: 'Market: Offline', color: AppColors.negative);
         }
       },

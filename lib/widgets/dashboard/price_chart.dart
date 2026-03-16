@@ -18,8 +18,9 @@ class PriceChart extends ConsumerWidget {
         if (data.isEmpty) {
           return const Center(
             child: Text(
-              'Loading Market Data...',
+              'No market data yet. Check the Market badge or wait a few seconds.',
               style: TextStyle(color: AppColors.textSecondary),
+              textAlign: TextAlign.center,
             ),
           );
         }
