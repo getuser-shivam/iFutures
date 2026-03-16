@@ -7,6 +7,8 @@ import '../trading/ai_strategy.dart';
 import '../trading/strategy.dart';
 import '../models/kline.dart';
 import '../models/trade.dart';
+import '../models/risk_settings.dart';
+import '../models/position.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -46,6 +48,18 @@ final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
   );
 });
 
+final selectedSymbolProvider = StateProvider<String>((ref) => 'GALAUSDT');
+
+final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
+  await ref.watch(settingsInitProvider.future);
+  final settings = ref.watch(settingsServiceProvider);
+  return RiskSettings(
+    stopLossPercent: settings.getRiskStopLossPercent(),
+    takeProfitPercent: settings.getRiskTakeProfitPercent(),
+    tradeQuantity: settings.getRiskTradeQuantity(),
+  );
+});
+
 final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
   final aiStrategy = ref.watch(aiStrategyProvider).valueOrNull;
   return aiStrategy;
@@ -54,6 +68,7 @@ final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
   final api = await ref.watch(binanceApiProvider.future);
   final ws = await ref.watch(binanceWsProvider.future);
+  final riskSettings = await ref.watch(riskSettingsProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
   
   if (strategy == null) {
@@ -64,6 +79,7 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref,
     apiService: api,
     wsService: ws,
     strategy: strategy,
+    riskSettings: riskSettings,
     symbol: symbol,
   );
   
@@ -84,8 +100,8 @@ final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, sym
   
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
-    if (!engine.isRunning) {
-      engine.start();
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
     }
     yield* engine.klineStream;
   } else {
@@ -98,10 +114,27 @@ final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, sym
   
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
     yield* engine.tradeStream;
   } else {
     yield [];
   }
 });
 
-final isBotRunningProvider = StateProvider<bool>((ref) => false);
+final positionStreamProvider = StreamProvider.family<Position?, String>((ref, symbol) async* {
+  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+  if (engineAsync is AsyncData<TradingEngine>) {
+    final engine = engineAsync.value;
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
+    yield* engine.positionStream;
+  } else {
+    yield null;
+  }
+});
+
+final isBotRunningProvider = StateProvider.family<bool, String>((ref, symbol) => false);

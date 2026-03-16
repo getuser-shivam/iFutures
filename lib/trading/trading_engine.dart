@@ -1,6 +1,8 @@
 import 'dart:async';
 import '../models/kline.dart';
 import '../models/trade.dart';
+import '../models/risk_settings.dart';
+import '../models/position.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import 'strategy.dart';
@@ -9,31 +11,43 @@ class TradingEngine {
   final BinanceApiService apiService;
   final BinanceWebSocketService wsService;
   final TradingStrategy strategy;
+  final RiskSettings riskSettings;
   final String symbol;
 
   List<Kline> _klines = [];
   List<Trade> _trades = [];
-  bool _isRunning = false;
+  bool _isTradingEnabled = false;
+  bool _isStreaming = false;
+  Position? _openPosition;
   StreamSubscription? _wsSubscription;
   
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
+  final _positionController = StreamController<Position?>.broadcast();
   
   Stream<List<Kline>> get klineStream => _klineController.stream;
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
+  Stream<Position?> get positionStream => _positionController.stream;
 
   TradingEngine({
     required this.apiService,
     required this.wsService,
     required this.strategy,
+    required this.riskSettings,
     required this.symbol,
   });
 
-  bool get isRunning => _isRunning;
+  bool get isStreaming => _isStreaming;
+  bool get isTradingEnabled => _isTradingEnabled;
+  Position? get openPosition => _openPosition;
   List<Kline> get klines => _klines;
   List<Trade> get trades => _trades;
 
-  Future<void> start() async {
+  Future<void> startMarketData() async {
+    if (_isStreaming) return;
+    _isStreaming = true;
+    _positionController.add(_openPosition);
+
     // 1. Fetch historical data
     try {
       final historicalData = await apiService.getKlines(symbol: symbol, limit: 100);
@@ -47,14 +61,34 @@ class TradingEngine {
     _wsSubscription = wsService.subscribeToKlines(symbol).listen((event) {
       final kline = Kline.fromWsJson(event);
       _updateKlines(kline);
+      _checkRisk(kline.close);
       
       // If candle is closed, evaluate strategy
-      if (event['k']['x'] == true) {
+      if (event['k']['x'] == true && _isTradingEnabled) {
         _evaluateStrategy();
       }
     }, onError: (e) {
       print('WS subscription error: $e');
+      _isStreaming = false;
     });
+  }
+
+  Future<void> start() async {
+    return startMarketData();
+  }
+
+  Future<void> enableTrading() async {
+    _isTradingEnabled = true;
+    if (!_isStreaming) {
+      await startMarketData();
+    }
+  }
+
+  void disableTrading({String reason = 'manual_stop'}) {
+    _isTradingEnabled = false;
+    if (_openPosition != null && _klines.isNotEmpty) {
+      _closePosition(_klines.last.close, reason);
+    }
   }
 
   void _updateKlines(Kline newKline) {
@@ -73,55 +107,176 @@ class TradingEngine {
   }
 
   Future<void> _evaluateStrategy() async {
+    if (!_isTradingEnabled) return;
+
     final signal = await strategy.evaluate(_klines);
     print('Strategy signal: $signal');
     
     if (signal == TradingSignal.buy) {
-      await _executeTrade('BUY');
+      _handleSignal(PositionSide.long);
     } else if (signal == TradingSignal.sell) {
-      await _executeTrade('SELL');
+      _handleSignal(PositionSide.short);
     }
   }
 
-  Future<void> _executeTrade(String side) async {
-    try {
-      if (_klines.isEmpty) {
-        print('No price data available for trade execution');
+  void _handleSignal(PositionSide desiredSide) {
+    _handleSignalWithReason(desiredSide, 'strategy');
+  }
+
+  void manualEnterLong() {
+    if (!_isTradingEnabled) return;
+    _handleSignalWithReason(PositionSide.long, 'manual');
+  }
+
+  void manualEnterShort() {
+    if (!_isTradingEnabled) return;
+    _handleSignalWithReason(PositionSide.short, 'manual');
+  }
+
+  void manualClose() {
+    if (!_isTradingEnabled) return;
+    if (_openPosition != null && _klines.isNotEmpty) {
+      _closePosition(_klines.last.close, 'manual');
+    }
+  }
+
+  void _handleSignalWithReason(PositionSide desiredSide, String reason) {
+    if (_klines.isEmpty) {
+      print('No price data available for trade execution');
+      return;
+    }
+
+    final currentPrice = _klines.last.close;
+    final quantity = riskSettings.tradeQuantity;
+
+    if (quantity <= 0) {
+      print('Trade quantity must be greater than zero');
+      return;
+    }
+
+    if (_openPosition == null) {
+      _openPosition = Position(
+        symbol: symbol,
+        side: desiredSide,
+        entryPrice: currentPrice,
+        quantity: quantity,
+        entryTime: DateTime.now(),
+      );
+      _positionController.add(_openPosition);
+      _recordEntryTrade(desiredSide, currentPrice, quantity, reason);
+      return;
+    }
+
+    if (_openPosition!.side == desiredSide) {
+      return;
+    }
+
+    final closeReason = reason == 'strategy' ? 'reversal' : reason;
+    _closePosition(currentPrice, closeReason);
+    _openPosition = Position(
+      symbol: symbol,
+      side: desiredSide,
+      entryPrice: currentPrice,
+      quantity: quantity,
+      entryTime: DateTime.now(),
+    );
+    _positionController.add(_openPosition);
+    _recordEntryTrade(desiredSide, currentPrice, quantity, reason);
+  }
+
+  void _recordEntryTrade(PositionSide side, double price, double quantity, String reason) {
+    final trade = Trade(
+      symbol: symbol,
+      side: side == PositionSide.long ? 'BUY' : 'SELL',
+      price: price,
+      quantity: quantity,
+      timestamp: DateTime.now(),
+      status: 'simulated',
+      strategy: strategy.name,
+      kind: 'ENTRY',
+      reason: reason,
+    );
+
+    _trades.add(trade);
+    _tradeController.add(_trades);
+    print('Recorded ENTRY ${trade.side}: ${trade.symbol} @ ${trade.price} (${trade.strategy})');
+  }
+
+  void _closePosition(double price, String reason) {
+    final position = _openPosition;
+    if (position == null) return;
+
+    final exitSide = position.isLong ? 'SELL' : 'BUY';
+    final pnl = position.isLong
+        ? (price - position.entryPrice) * position.quantity
+        : (position.entryPrice - price) * position.quantity;
+
+    final trade = Trade(
+      symbol: symbol,
+      side: exitSide,
+      price: price,
+      quantity: position.quantity,
+      timestamp: DateTime.now(),
+      status: 'simulated',
+      strategy: strategy.name,
+      kind: 'EXIT',
+      realizedPnl: pnl,
+      reason: reason,
+    );
+
+    _trades.add(trade);
+    _tradeController.add(_trades);
+    _openPosition = null;
+    _positionController.add(_openPosition);
+
+    print('Recorded EXIT $exitSide: ${trade.symbol} @ ${trade.price} PnL=$pnl (${trade.reason})');
+  }
+
+  void _checkRisk(double currentPrice) {
+    if (!_isTradingEnabled) return;
+    final position = _openPosition;
+    if (position == null) return;
+
+    if (riskSettings.hasStopLoss) {
+      final stopLoss = position.stopLossPrice(riskSettings.stopLossPercent);
+      if (position.isLong && currentPrice <= stopLoss) {
+        _closePosition(currentPrice, 'stop_loss');
         return;
       }
-
-      final currentPrice = _klines.last.close;
-      final quantity = 0.01; // Example quantity - in real implementation, this would be calculated
-
-      // Create trade record
-      final trade = Trade(
-        symbol: symbol,
-        side: side,
-        price: currentPrice,
-        quantity: quantity,
-        timestamp: DateTime.now(),
-        status: 'simulated', // Since we're not actually placing orders yet
-        strategy: strategy.name,
-      );
-
-      _trades.add(trade);
-      _tradeController.add(_trades);
-
-      print('Recorded $side trade: ${trade.symbol} @ ${trade.price} (${trade.strategy})');
-    } catch (e) {
-      print('Trade execution error: $e');
+      if (!position.isLong && currentPrice >= stopLoss) {
+        _closePosition(currentPrice, 'stop_loss');
+        return;
+      }
     }
+
+    if (riskSettings.hasTakeProfit) {
+      final takeProfit = position.takeProfitPrice(riskSettings.takeProfitPercent);
+      if (position.isLong && currentPrice >= takeProfit) {
+        _closePosition(currentPrice, 'take_profit');
+        return;
+      }
+      if (!position.isLong && currentPrice <= takeProfit) {
+        _closePosition(currentPrice, 'take_profit');
+        return;
+      }
+    }
+  }
+
+  void stopMarketData() {
+    _isStreaming = false;
+    _wsSubscription?.cancel();
+    _wsSubscription = null;
   }
 
   void stop() {
-    _isRunning = false;
-    _wsSubscription?.cancel();
-    _wsSubscription = null;
+    disableTrading();
+    stopMarketData();
   }
 
   void dispose() {
     _klineController.close();
     _tradeController.close();
-    _wsSubscription?.cancel();
+    _positionController.close();
+    stopMarketData();
   }
 }

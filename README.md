@@ -4,64 +4,47 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Versioning
 
-- **Current version:** `1.0.3+4` (see `pubspec.yaml`)
+- **Current version:** `1.0.5+6` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+- **TODOs:** [TODO.md](TODO.md)
 
 ## Application Overview
 
-iFutures is a multi-platform trading application that connects to Binance API and provides both algorithmic and AI-powered trading strategies. The app supports real-time market data visualization, live price monitoring, and automated bot control.
+iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, and automated bot control.
 
 ### Current Features
-- **Real-time Price Charts**: Live candlestick charts with market insights
-- **Strategy Selection**: Switch between ALGO and AI trading modes
-- **Bot Control**: Start/stop bot execution
-- **Market Data**: GALAUSDT and other trading pair monitoring
-- **Settings Management**: API key configuration and testnet toggle
-- **Trade History**: Real-time display of executed trades with price, quantity, and strategy info
+
+- **Real-time Candlestick Charts**: OHLC candlestick chart with live updates
+- **Strategy Modes**: ALGO, AI, and Manual trading modes
+- **Bot Control**: Start/stop trading execution
+- **Multi-Symbol Support**: Select symbols like GALAUSDT, BTCUSDT, ETHUSDT, BNBUSDT, and SOLUSDT
+- **Risk Management**: Stop loss, take profit, and trade quantity configuration
+- **Open Position Card**: Current position with SL/TP previews and unrealized PnL
+- **Trade History**: Entry/exit trades with reasons and realized PnL
+- **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
 - **Status Indicators**: Bot running state and engine status display
 
 ## Screenshots
 
 ### Windows Desktop Application
 ![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: App showing live GALAUSDT price with strategy selector, bot controls, and trade history*
+*Current state: App showing live price, strategy selector, controls, and trade history*
 
-## Development Status & Tasks
+## Development Status
 
-### ✅ Completed
+### Completed
 - [x] Flutter Windows build setup
-- [x] Basic dashboard UI layout with gradient background
-- [x] Real-time price display (GALAUSDT ticker)
-- [x] Price chart widget (fl_chart integration with line chart)
-- [x] Strategy mode selector (ALGO/AI toggle)
-- [x] Bot control buttons (START/STOP with state management)
-- [x] Settings screen navigation
-- [x] API key/secret storage (flutter_secure_storage)
-- [x] Binance API service with testnet support
-- [x] WebSocket service for real-time data
-- [x] Riverpod state management setup
-- [x] Trading engine with strategy evaluation
-- [x] RSI algorithmic strategy implementation
-- [x] AI strategy framework (API integration ready)
-- [x] **Bot status display**: Real-time bot running state indicator
-- [x] **Engine status display**: Engine load/ready/error status chips
-- [x] **Trade History**: Real-time display of executed trades with price, quantity, timestamp, and strategy information
+- [x] Real-time price display and WebSocket streaming
+- [x] Candlestick chart (OHLC)
+- [x] Strategy selection (ALGO/AI/Manual)
+- [x] Bot control buttons (START/STOP)
+- [x] Risk settings (SL/TP/quantity)
+- [x] Paper trading with entry/exit and realized PnL
+- [x] Trade history and performance metrics
+- [x] Multi-symbol selection
 
-### 🔄 In Progress / TODO
-- [ ] **Performance Metrics**: Win rate, total P&L, drawdown tracking
-- [ ] **Risk Management**: Stop loss, take profit, position sizing configuration
-- [ ] **Chart Enhancement**: Convert line chart to proper candlestick chart
-- [ ] **Order Execution**: Enable actual trade placement (currently commented out)
-- [ ] **Error Handling**: Network errors, API failures, connection drops
-- [ ] **Settings UI**: Complete API configuration interface with validation
-- [ ] **AI Strategy Completion**: Implement AI API response parsing and decision logic
-- [ ] **Multiple Symbols**: Support for additional trading pairs beyond GALAUSDT
-- [ ] **Data Persistence**: Save bot state, settings, and trade history between sessions
-- [ ] **Notifications**: Trade alerts, price alerts, and system notifications
-- [ ] **Backtesting**: Historical strategy testing and performance analysis
-- [ ] **Logging**: Comprehensive trade and error logging system
-- [ ] **Mobile Support**: iOS/Android builds and responsive design
-- [ ] **Testing**: Unit and widget tests
+### Roadmap
+See [TODO.md](TODO.md) for current priorities and upcoming work.
 
 ## Building and Running
 
@@ -87,27 +70,37 @@ flutter run -d linux
 
 ```
 lib/
-├── main.dart                    # App entry point
-├── models/
-│   └── kline.dart              # OHLCV candlestick data model
-├── providers/
-│   └── trading_provider.dart    # Riverpod state management
-├── screens/
-│   ├── dashboard_screen.dart    # Main trading dashboard
-│   └── settings_screen.dart     # Configuration screen
-├── services/
-│   ├── binance_api.dart         # Binance REST API client
-│   ├── binance_ws.dart          # Binance WebSocket connection
-│   └── settings_service.dart    # Settings storage
-├── trading/
-│   ├── strategy.dart            # Strategy interface
-│   ├── ai_strategy.dart         # AI-powered strategy
-│   ├── algo_strategy.dart       # Algorithmic strategy
-│   └── trading_engine.dart      # Main execution engine
-└── widgets/
-    ├── mode_selector.dart       # Strategy mode toggle
-    ├── price_chart.dart         # Chart visualization
-    └── ...                       # Other UI components
+|- main.dart                    # App entry point
+|- models/
+|  |- kline.dart                # OHLCV candlestick data model
+|  |- position.dart             # Open position model
+|  |- risk_settings.dart        # Risk configuration model
+|  |- trade.dart                # Trade record model
+|- providers/
+|  |- trading_provider.dart     # Riverpod state management
+|- screens/
+|  |- dashboard_screen.dart     # Main trading dashboard
+|  |- settings_screen.dart      # Configuration screen
+|  |- gallery_screen.dart       # App gallery
+|- services/
+|  |- binance_api.dart          # Binance REST API client
+|  |- binance_ws.dart           # Binance WebSocket connection
+|  |- settings_service.dart     # Settings storage
+|- trading/
+|  |- strategy.dart             # Strategy interface
+|  |- ai_strategy.dart          # AI-powered strategy
+|  |- algo_strategy.dart        # Algorithmic strategy
+|  |- manual_strategy.dart      # Manual strategy placeholder
+|  |- trading_engine.dart       # Main execution engine
+|- widgets/
+|  |- dashboard/
+|  |  |- mode_selector.dart       # Strategy mode toggle
+|  |  |- open_position_card.dart  # Open position summary
+|  |  |- price_chart.dart         # Candlestick chart visualization
+|  |  |- performance_metrics.dart # Realized PnL metrics
+|  |  |- trade_history.dart       # Trade history list
+|  |- gallery/
+|  |  |- screenshot_carousel.dart # App evolution carousel
 ```
 
 ## Dependencies

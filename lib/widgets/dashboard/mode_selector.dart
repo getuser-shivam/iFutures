@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/trading_provider.dart';
-import '../trading/algo_strategy.dart';
-import '../trading/ai_strategy.dart';
+import '../../providers/trading_provider.dart';
+import '../../trading/algo_strategy.dart';
+import '../../trading/ai_strategy.dart';
+import '../../trading/manual_strategy.dart';
 
 class ModeSelector extends ConsumerWidget {
   const ModeSelector({super.key});
@@ -37,6 +38,14 @@ class ModeSelector extends ConsumerWidget {
             () => ref.read(currentStrategyProvider.notifier).state = AiStrategy(
               apiUrl: 'https://your-ai-api.com/analyze',
             ),
+          ),
+          const SizedBox(width: 12),
+          _buildOption(
+            context,
+            ref,
+            'MANUAL',
+            currentStrategy is ManualStrategy,
+            () => ref.read(currentStrategyProvider.notifier).state = ManualStrategy(),
           ),
         ],
       ),

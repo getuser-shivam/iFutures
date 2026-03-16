@@ -6,6 +6,9 @@ class SettingsService {
   static const _apiSecret = 'binance_api_secret';
   static const _aiUrl = 'ai_strategy_url';
   static const _isTestnet = 'is_testnet';
+  static const _riskStopLoss = 'risk_stop_loss_percent';
+  static const _riskTakeProfit = 'risk_take_profit_percent';
+  static const _riskTradeQuantity = 'risk_trade_quantity';
 
   final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
   SharedPreferences? _prefs;
@@ -39,6 +42,25 @@ class SettingsService {
   Future<void> setIsTestnet(bool value) async {
     await init();
     await _prefs?.setBool(_isTestnet, value);
+  }
+
+  // Risk settings
+  double getRiskStopLossPercent() => _prefs?.getDouble(_riskStopLoss) ?? 1.0;
+  Future<void> setRiskStopLossPercent(double value) async {
+    await init();
+    await _prefs?.setDouble(_riskStopLoss, value);
+  }
+
+  double getRiskTakeProfitPercent() => _prefs?.getDouble(_riskTakeProfit) ?? 2.0;
+  Future<void> setRiskTakeProfitPercent(double value) async {
+    await init();
+    await _prefs?.setDouble(_riskTakeProfit, value);
+  }
+
+  double getRiskTradeQuantity() => _prefs?.getDouble(_riskTradeQuantity) ?? 0.01;
+  Future<void> setRiskTradeQuantity(double value) async {
+    await init();
+    await _prefs?.setDouble(_riskTradeQuantity, value);
   }
 
   Future<void> clearAll() async {

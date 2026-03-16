@@ -1,15 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
-import '../providers/trading_provider.dart';
-import '../models/trade.dart';
+import '../../providers/trading_provider.dart';
+import '../../models/trade.dart';
 
 class TradeHistory extends ConsumerWidget {
-  const TradeHistory({super.key});
+  final String symbol;
+
+  const TradeHistory({super.key, required this.symbol});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final trades = ref.watch(tradeStreamProvider('GALAUSDT'));
+    final trades = ref.watch(tradeStreamProvider(symbol));
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -83,6 +85,10 @@ class TradeHistory extends ConsumerWidget {
   Widget _buildTradeItem(Trade trade) {
     final isBuy = trade.side == 'BUY';
     final color = isBuy ? Colors.green : Colors.red;
+    final isExit = trade.kind == 'EXIT';
+    final badgeText = isExit && trade.reason != null && trade.reason!.isNotEmpty
+        ? trade.reason!.replaceAll('_', ' ').toUpperCase()
+        : trade.kind;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -107,7 +113,7 @@ class TradeHistory extends ConsumerWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    '${trade.side} ${trade.symbol}',
+                    '${trade.side} ${trade.symbol} (${trade.kind})',
                     style: TextStyle(
                       color: color,
                       fontWeight: FontWeight.bold,
@@ -150,12 +156,23 @@ class TradeHistory extends ConsumerWidget {
                   borderRadius: BorderRadius.circular(4),
                 ),
                 child: Text(
-                  trade.status.toUpperCase(),
+                  badgeText,
                   style: const TextStyle(color: Colors.white, fontSize: 10),
                 ),
               ),
             ],
           ),
+          if (isExit && trade.realizedPnl != null) ...[
+            const SizedBox(height: 4),
+            Text(
+              'PnL: ${trade.realizedPnl!.toStringAsFixed(4)}',
+              style: TextStyle(
+                color: trade.realizedPnl! >= 0 ? Colors.greenAccent : Colors.redAccent,
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
         ],
       ),
     );

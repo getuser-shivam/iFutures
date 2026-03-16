@@ -5,9 +5,12 @@ class Trade {
   final double quantity;
   final DateTime timestamp;
   final String? orderId;
-  final String status; // 'pending', 'filled', 'cancelled'
+  final String status; // 'pending', 'filled', 'cancelled', 'simulated'
   final double? fee;
   final String strategy; // 'ALGO' or 'AI'
+  final String kind; // 'ENTRY' or 'EXIT'
+  final double? realizedPnl;
+  final String? reason; // 'strategy', 'stop_loss', 'take_profit', 'manual_stop', 'reversal'
 
   Trade({
     required this.symbol,
@@ -19,6 +22,9 @@ class Trade {
     this.status = 'pending',
     this.fee,
     required this.strategy,
+    this.kind = 'ENTRY',
+    this.realizedPnl,
+    this.reason,
   });
 
   // Calculate P&L for closed positions
@@ -39,6 +45,9 @@ class Trade {
       'status': status,
       'fee': fee,
       'strategy': strategy,
+      'kind': kind,
+      'realizedPnl': realizedPnl,
+      'reason': reason,
     };
   }
 
@@ -53,6 +62,9 @@ class Trade {
       status: json['status'] ?? 'pending',
       fee: json['fee'],
       strategy: json['strategy'],
+      kind: json['kind'] ?? 'ENTRY',
+      realizedPnl: json['realizedPnl'],
+      reason: json['reason'],
     );
   }
 }
