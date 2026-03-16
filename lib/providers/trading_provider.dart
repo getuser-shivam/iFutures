@@ -127,6 +127,7 @@ final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, sym
   
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
+    yield engine.klines;
     if (!engine.isStreaming) {
       await engine.startMarketData();
     }
@@ -141,6 +142,7 @@ final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, sym
   
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
+    yield engine.trades;
     if (!engine.isStreaming) {
       await engine.startMarketData();
     }
@@ -155,6 +157,7 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((ref, sy
 
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
+    yield engine.openPosition;
     if (!engine.isStreaming) {
       await engine.startMarketData();
     }
