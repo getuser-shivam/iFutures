@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../trading/manual_strategy.dart';
+import '../models/connection_status.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/dashboard/mode_selector.dart';
 import '../widgets/dashboard/open_position_card.dart';
@@ -26,6 +27,7 @@ class DashboardScreen extends ConsumerWidget {
     final currentStrategy = ref.watch(currentStrategyProvider);
     final isManual = currentStrategy is ManualStrategy;
     final settingsInit = ref.watch(settingsInitProvider);
+    final connectionStatus = ref.watch(connectionStatusProvider(symbol));
     const symbols = ['GALAUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'];
     final latestPrice = ticker.maybeWhen(
       data: (data) => double.tryParse(data['c']?.toString() ?? ''),
@@ -168,7 +170,7 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
                   sliver: SliverToBoxAdapter(
-                    child: _buildStatusRow(isRunning, engineAsync),
+                    child: _buildStatusRow(isRunning, engineAsync, connectionStatus),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -392,9 +394,14 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildStatusRow(bool isRunning, AsyncValue<TradingEngine> engineAsync) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+  Widget _buildStatusRow(
+    bool isRunning,
+    AsyncValue<TradingEngine> engineAsync,
+    AsyncValue<ConnectionStatus> connectionStatus,
+  ) {
+    return Wrap(
+      spacing: 12,
+      runSpacing: 8,
       children: [
         _StatusPill(
           label: isRunning ? 'Bot: Running' : 'Bot: Stopped',
@@ -414,7 +421,35 @@ class DashboardScreen extends ConsumerWidget {
             color: AppColors.negative,
           ),
         ),
+        _buildConnectionBadge(connectionStatus),
       ],
+    );
+  }
+
+  Widget _buildConnectionBadge(AsyncValue<ConnectionStatus> status) {
+    return status.when(
+      data: (data) {
+        final ageSeconds = data.lastMessageAt == null
+            ? null
+            : DateTime.now().difference(data.lastMessageAt!).inSeconds;
+        final latency = data.latencyMs != null ? '${data.latencyMs}ms' : '--';
+
+        switch (data.state) {
+          case ConnectionState.connecting:
+            return const _StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber);
+          case ConnectionState.connected:
+            return _StatusPill(label: 'Market: Live • $latency', color: AppColors.glowCyan);
+          case ConnectionState.stale:
+            return _StatusPill(
+              label: 'Market: Slow • ${ageSeconds ?? '-'}s',
+              color: AppColors.warning,
+            );
+          case ConnectionState.disconnected:
+            return const _StatusPill(label: 'Market: Offline', color: AppColors.negative);
+        }
+      },
+      loading: () => const _StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber),
+      error: (e, _) => const _StatusPill(label: 'Market: Error', color: AppColors.negative),
     );
   }
 }

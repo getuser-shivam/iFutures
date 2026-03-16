@@ -9,6 +9,7 @@ import '../models/kline.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
+import '../models/connection_status.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -134,6 +135,20 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((ref, sy
     yield* engine.positionStream;
   } else {
     yield null;
+  }
+});
+
+final connectionStatusProvider = StreamProvider.family<ConnectionStatus, String>((ref, symbol) async* {
+  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+  if (engineAsync is AsyncData<TradingEngine>) {
+    final engine = engineAsync.value;
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
+    yield* engine.connectionStream;
+  } else {
+    yield ConnectionStatus.disconnected();
   }
 });
 

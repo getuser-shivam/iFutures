@@ -3,6 +3,7 @@ import '../models/kline.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
+import '../models/connection_status.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import 'strategy.dart';
@@ -20,14 +21,19 @@ class TradingEngine {
   bool _isStreaming = false;
   Position? _openPosition;
   StreamSubscription? _wsSubscription;
+  Timer? _connectionTimer;
+  DateTime? _lastMessageAt;
+  int? _lastLatencyMs;
   
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
   final _positionController = StreamController<Position?>.broadcast();
+  final _connectionController = StreamController<ConnectionStatus>.broadcast();
   
   Stream<List<Kline>> get klineStream => _klineController.stream;
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
   Stream<Position?> get positionStream => _positionController.stream;
+  Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
 
   TradingEngine({
     required this.apiService,
@@ -47,6 +53,8 @@ class TradingEngine {
     if (_isStreaming) return;
     _isStreaming = true;
     _positionController.add(_openPosition);
+    _connectionController.add(ConnectionStatus.connecting());
+    _startConnectionTicker();
 
     // 1. Fetch historical data
     try {
@@ -59,6 +67,7 @@ class TradingEngine {
 
     // 2. Subscribe to real-time updates
     _wsSubscription = wsService.subscribeToKlines(symbol).listen((event) {
+      _recordMessageTimestamp(event);
       final kline = Kline.fromWsJson(event);
       _updateKlines(kline);
       _checkRisk(kline.close);
@@ -70,6 +79,7 @@ class TradingEngine {
     }, onError: (e) {
       print('WS subscription error: $e');
       _isStreaming = false;
+      _emitConnectionStatus(forceDisconnected: true);
     });
   }
 
@@ -266,6 +276,8 @@ class TradingEngine {
     _isStreaming = false;
     _wsSubscription?.cancel();
     _wsSubscription = null;
+    _stopConnectionTicker();
+    _emitConnectionStatus(forceDisconnected: true);
   }
 
   void stop() {
@@ -277,6 +289,62 @@ class TradingEngine {
     _klineController.close();
     _tradeController.close();
     _positionController.close();
+    _connectionController.close();
     stopMarketData();
+  }
+
+  void _recordMessageTimestamp(Map<String, dynamic> event) {
+    _lastMessageAt = DateTime.now();
+    final eventTime = event['E'] ?? (event['k'] is Map ? event['k']['T'] : null);
+    if (eventTime is int) {
+      _lastLatencyMs = (_lastMessageAt!.millisecondsSinceEpoch - eventTime).abs();
+    } else if (eventTime is String) {
+      final parsed = int.tryParse(eventTime);
+      if (parsed != null) {
+        _lastLatencyMs = (_lastMessageAt!.millisecondsSinceEpoch - parsed).abs();
+      }
+    }
+    _emitConnectionStatus();
+  }
+
+  void _startConnectionTicker() {
+    _connectionTimer?.cancel();
+    _connectionTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      _emitConnectionStatus();
+    });
+  }
+
+  void _stopConnectionTicker() {
+    _connectionTimer?.cancel();
+    _connectionTimer = null;
+  }
+
+  void _emitConnectionStatus({bool forceDisconnected = false}) {
+    if (_connectionController.isClosed) return;
+
+    if (forceDisconnected || !_isStreaming) {
+      _connectionController.add(ConnectionStatus.disconnected(lastMessageAt: _lastMessageAt));
+      return;
+    }
+
+    if (_lastMessageAt == null) {
+      _connectionController.add(ConnectionStatus.connecting());
+      return;
+    }
+
+    final ageSeconds = DateTime.now().difference(_lastMessageAt!).inSeconds;
+    final state = ageSeconds <= 3
+        ? ConnectionState.connected
+        : ageSeconds <= 15
+            ? ConnectionState.stale
+            : ConnectionState.disconnected;
+
+    _connectionController.add(
+      ConnectionStatus(
+        state: state,
+        latencyMs: _lastLatencyMs,
+        lastMessageAt: _lastMessageAt,
+      ),
+    );
   }
 }
