@@ -41,9 +41,10 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Trading engine with strategy evaluation
 - [x] RSI algorithmic strategy implementation
 - [x] AI strategy framework (API integration ready)
+- [x] **Bot status display**: Real-time bot running state indicator
+- [x] **Engine status display**: Engine load/ready/error status chips
 
 ### 🔄 In Progress / TODO
-- [ ] **Bot Status Display**: Show real-time bot execution status and connection state
 - [ ] **Trade History**: Display completed trades with entry/exit prices and P&L
 - [ ] **Performance Metrics**: Win rate, total P&L, drawdown tracking
 - [ ] **Risk Management**: Stop loss, take profit, position sizing configuration
