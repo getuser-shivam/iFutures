@@ -16,7 +16,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 ## Screenshots
 
 ### Windows Desktop Application
-![iFutures Dashboard - GALAUSDT](screenshot_app_foreground.png)
+![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
 *Current state: App showing live GALAUSDT price with strategy selector and bot controls*
 
 ## Development Status & Tasks
