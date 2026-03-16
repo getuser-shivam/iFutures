@@ -2,6 +2,11 @@
 
 A Flutter-based trading bot application for automated cryptocurrency trading with AI and algorithmic strategies.
 
+## Versioning
+
+- **Current version:** `1.0.1+2` (see `pubspec.yaml`)
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
+
 ## Application Overview
 
 iFutures is a multi-platform trading application that connects to Binance API and provides both algorithmic and AI-powered trading strategies. The app supports real-time market data visualization, live price monitoring, and automated bot control.
