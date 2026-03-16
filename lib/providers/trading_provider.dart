@@ -4,7 +4,6 @@ import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
 import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
-import '../trading/algo_strategy.dart';
 import '../trading/strategy.dart';
 import '../models/kline.dart';
 

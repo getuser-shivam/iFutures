@@ -90,6 +90,36 @@ class DashboardScreen extends ConsumerWidget {
               child: PriceChart(),
             ),
           ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Chip(
+                  label: Text(isRunning ? 'Bot: Running' : 'Bot: Stopped'),
+                  backgroundColor: isRunning ? Colors.green.shade600 : Colors.red.shade600,
+                  labelStyle: const TextStyle(color: Colors.white),
+                ),
+                engineAsync.when(
+                  data: (_) => Chip(
+                    label: const Text('Engine: Ready'),
+                    backgroundColor: Colors.green.shade700,
+                    labelStyle: const TextStyle(color: Colors.white),
+                  ),
+                  loading: () => Chip(
+                    label: const Text('Engine: Loading...'),
+                    backgroundColor: Colors.orange.shade700,
+                    labelStyle: const TextStyle(color: Colors.white),
+                  ),
+                  error: (e, _) => Chip(
+                    label: const Text('Engine: Error'),
+                    backgroundColor: Colors.red.shade700,
+                    labelStyle: const TextStyle(color: Colors.white),
+                  ),
+                ),
+              ],
+            ),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(horizontal: 24.0),
             child: Text(
