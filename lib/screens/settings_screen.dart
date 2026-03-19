@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
+import '../constants/symbols.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_panel.dart';
 
@@ -15,6 +16,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _apiKeyController;
   late TextEditingController _apiSecretController;
   late TextEditingController _aiUrlController;
+  late TextEditingController _symbolListController;
   late TextEditingController _stopLossController;
   late TextEditingController _takeProfitController;
   late TextEditingController _tradeQuantityController;
@@ -27,6 +29,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _apiKeyController = TextEditingController();
     _apiSecretController = TextEditingController();
     _aiUrlController = TextEditingController();
+    _symbolListController = TextEditingController();
     _stopLossController = TextEditingController();
     _takeProfitController = TextEditingController();
     _tradeQuantityController = TextEditingController();
@@ -39,11 +42,16 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     final apiKey = await settings.getApiKey();
     final apiSecret = await settings.getApiSecret();
+    final storedSymbols = settings.getSymbolList();
+    final symbolText = (storedSymbols == null || storedSymbols.isEmpty)
+        ? defaultSymbols.join(', ')
+        : storedSymbols.join(', ');
 
     setState(() {
       _apiKeyController.text = apiKey ?? '';
       _apiSecretController.text = apiSecret ?? '';
       _aiUrlController.text = settings.getAiUrl();
+      _symbolListController.text = symbolText;
       _isTestnet = settings.getIsTestnet();
       _stopLossController.text = settings.getRiskStopLossPercent().toString();
       _takeProfitController.text = settings.getRiskTakeProfitPercent().toString();
@@ -57,6 +65,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _apiKeyController.dispose();
     _apiSecretController.dispose();
     _aiUrlController.dispose();
+    _symbolListController.dispose();
     _stopLossController.dispose();
     _takeProfitController.dispose();
     _tradeQuantityController.dispose();
@@ -68,11 +77,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     return double.tryParse(normalized);
   }
 
+  List<String> _parseSymbolList(String value) {
+    final parts = value.split(',');
+    final seen = <String>{};
+    final result = <String>[];
+    for (final part in parts) {
+      final symbol = part.trim().toUpperCase();
+      if (symbol.isEmpty) continue;
+      if (seen.add(symbol)) {
+        result.add(symbol);
+      }
+    }
+    return result;
+  }
+
   Future<void> _saveSettings() async {
     final settings = ref.read(settingsServiceProvider);
     final stopLoss = _parseDouble(_stopLossController.text);
     final takeProfit = _parseDouble(_takeProfitController.text);
     final tradeQuantity = _parseDouble(_tradeQuantityController.text);
+    final symbols = _parseSymbolList(_symbolListController.text);
 
     if (stopLoss == null || stopLoss < 0) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -95,10 +119,18 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
+    if (symbols.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add at least one symbol (comma-separated).')),
+      );
+      return;
+    }
+
     await settings.setApiKey(_apiKeyController.text);
     await settings.setApiSecret(_apiSecretController.text);
     await settings.setAiUrl(_aiUrlController.text);
     await settings.setIsTestnet(_isTestnet);
+    await settings.setSymbolList(symbols);
     await settings.setRiskStopLossPercent(stopLoss);
     await settings.setRiskTakeProfitPercent(takeProfit);
     await settings.setRiskTradeQuantity(tradeQuantity);
@@ -110,6 +142,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ref.invalidate(binanceApiProvider);
       ref.invalidate(binanceWsProvider);
       ref.invalidate(riskSettingsProvider);
+      ref.invalidate(symbolListProvider);
     }
   }
 
@@ -160,6 +193,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: TextField(
               controller: _aiUrlController,
               decoration: const InputDecoration(labelText: 'AI Analysis URL'),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _SettingsSection(
+            title: 'Symbols',
+            subtitle: 'Comma-separated list of tradable symbols.',
+            child: TextField(
+              controller: _symbolListController,
+              decoration: const InputDecoration(
+                labelText: 'Symbols (e.g., BTCUSDT, ETHUSDT)',
+              ),
             ),
           ),
           const SizedBox(height: 16),

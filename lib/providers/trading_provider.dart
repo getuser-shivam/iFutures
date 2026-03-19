@@ -2,10 +2,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
+import '../services/trade_history_service.dart';
 import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
 import '../trading/algo_strategy.dart';
 import '../trading/strategy.dart';
+import '../constants/symbols.dart';
 import '../models/kline.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
@@ -14,6 +16,10 @@ import '../models/connection_status.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
+});
+
+final tradeHistoryServiceProvider = Provider<TradeHistoryService>((ref) {
+  return TradeHistoryService();
 });
 
 final settingsInitProvider = FutureProvider<void>((ref) async {
@@ -78,6 +84,16 @@ final selectedSymbolProvider = StateNotifierProvider<SelectedSymbolNotifier, Str
   return SelectedSymbolNotifier(settings);
 });
 
+final symbolListProvider = FutureProvider<List<String>>((ref) async {
+  await ref.watch(settingsInitProvider.future);
+  final settings = ref.watch(settingsServiceProvider);
+  final stored = settings.getSymbolList();
+  if (stored != null && stored.isNotEmpty) {
+    return stored;
+  }
+  return defaultSymbols;
+});
+
 final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
@@ -95,6 +111,7 @@ final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
   final api = await ref.watch(binanceApiProvider.future);
   final ws = await ref.watch(binanceWsProvider.future);
+  final history = ref.watch(tradeHistoryServiceProvider);
   final riskSettings = await ref.watch(riskSettingsProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
   
@@ -105,6 +122,7 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref,
   final engine = TradingEngine(
     apiService: api,
     wsService: ws,
+    tradeHistoryService: history,
     strategy: strategy,
     riskSettings: riskSettings,
     symbol: symbol,

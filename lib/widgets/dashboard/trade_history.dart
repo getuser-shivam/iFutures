@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../providers/trading_provider.dart';
 import '../../models/trade.dart';
+import '../../trading/trading_engine.dart';
 import '../../theme/app_theme.dart';
 import '../common/app_panel.dart';
 
@@ -14,6 +15,11 @@ class TradeHistory extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trades = ref.watch(tradeStreamProvider(symbol));
+    final engineAsync = ref.watch(tradingEngineProvider(symbol));
+    final tradeList = trades.maybeWhen(
+      data: (list) => list,
+      orElse: () => const <Trade>[],
+    );
 
     return AppPanel(
       child: Column(
@@ -32,13 +38,28 @@ class TradeHistory extends ConsumerWidget {
                 ),
               ),
               const Spacer(),
-              trades.when(
-                data: (tradeList) => Text(
-                  '${tradeList.length} trades',
-                  style: const TextStyle(color: AppColors.textSecondary),
+              Text(
+                '${tradeList.length} trades',
+                style: const TextStyle(color: AppColors.textSecondary),
+              ),
+              const SizedBox(width: 8),
+              TextButton.icon(
+                onPressed: tradeList.isEmpty || engineAsync.isLoading
+                    ? null
+                    : () async {
+                        if (engineAsync is AsyncData<TradingEngine>) {
+                          await engineAsync.value.clearTrades();
+                          if (!context.mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Trade history cleared')),
+                          );
+                        }
+                      },
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.warning,
                 ),
-                loading: () => const SizedBox.shrink(),
-                error: (_, __) => const SizedBox.shrink(),
+                icon: const Icon(Icons.delete_outline, size: 16),
+                label: const Text('CLEAR'),
               ),
             ],
           ),

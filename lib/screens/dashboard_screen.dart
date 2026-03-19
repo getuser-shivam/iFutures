@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../trading/strategy.dart';
+import '../constants/symbols.dart';
 import '../models/connection_status.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
@@ -30,11 +31,20 @@ class DashboardScreen extends ConsumerWidget {
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
     final signalAsync = ref.watch(signalStreamProvider(symbol));
-    const symbols = ['GALAUSDT', 'BTCUSDT', 'ETHUSDT', 'BNBUSDT', 'SOLUSDT'];
+    final symbolsAsync = ref.watch(symbolListProvider);
+    final symbols = symbolsAsync.maybeWhen(
+      data: (data) => data,
+      orElse: () => defaultSymbols,
+    );
     final latestPrice = ticker.maybeWhen(
       data: (data) => double.tryParse(data['c']?.toString() ?? ''),
       orElse: () => null,
     );
+    if (symbols.isNotEmpty && !symbols.contains(symbol)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(selectedSymbolProvider.notifier).setSymbol(symbols.first);
+      });
+    }
 
     if (settingsInit.isLoading) {
       return const Scaffold(

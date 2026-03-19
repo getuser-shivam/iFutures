@@ -6,11 +6,13 @@ import '../models/position.dart';
 import '../models/connection_status.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
+import '../services/trade_history_service.dart';
 import 'strategy.dart';
 
 class TradingEngine {
   final BinanceApiService apiService;
   final BinanceWebSocketService wsService;
+  final TradeHistoryService tradeHistoryService;
   final TradingStrategy strategy;
   final RiskSettings riskSettings;
   final String symbol;
@@ -19,6 +21,7 @@ class TradingEngine {
   List<Trade> _trades = [];
   bool _isAutoTradingEnabled = false;
   bool _isStreaming = false;
+  bool _hasLoadedTrades = false;
   Position? _openPosition;
   StreamSubscription? _wsSubscription;
   Timer? _connectionTimer;
@@ -41,6 +44,7 @@ class TradingEngine {
   TradingEngine({
     required this.apiService,
     required this.wsService,
+    required this.tradeHistoryService,
     required this.strategy,
     required this.riskSettings,
     required this.symbol,
@@ -60,6 +64,7 @@ class TradingEngine {
     _connectionController.add(ConnectionStatus.connecting());
     _signalController.add(_lastSignal);
     _startConnectionTicker();
+    await _loadPersistedTrades();
 
     // 1. Fetch historical data
     try {
@@ -221,6 +226,7 @@ class TradingEngine {
 
     _trades.add(trade);
     _tradeController.add(_trades);
+    tradeHistoryService.saveTrades(symbol, _trades);
     print('Recorded ENTRY ${trade.side}: ${trade.symbol} @ ${trade.price} (${trade.strategy})');
   }
 
@@ -248,6 +254,7 @@ class TradingEngine {
 
     _trades.add(trade);
     _tradeController.add(_trades);
+    tradeHistoryService.saveTrades(symbol, _trades);
     _openPosition = null;
     _positionController.add(_openPosition);
 
@@ -358,5 +365,25 @@ class TradingEngine {
         lastMessageAt: _lastMessageAt,
       ),
     );
+  }
+
+  Future<void> clearTrades() async {
+    _trades = [];
+    _tradeController.add(_trades);
+    await tradeHistoryService.clearTrades(symbol);
+  }
+
+  Future<void> _loadPersistedTrades() async {
+    if (_hasLoadedTrades) return;
+    _hasLoadedTrades = true;
+    try {
+      final persisted = await tradeHistoryService.loadTrades(symbol);
+      if (persisted.isNotEmpty) {
+        _trades = persisted;
+        _tradeController.add(_trades);
+      }
+    } catch (e) {
+      print('Failed to load trade history: $e');
+    }
   }
 }
