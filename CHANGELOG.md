@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.6] - 2026-03-19
+### Added
+- Strategy parameter tuning UI in Settings with RSI presets and custom threshold inputs.
+- Live strategy labeling on the dashboard so the active RSI preset is visible at a glance.
+- Current screenshot refresh showing the updated Settings experience and app gallery.
+
 ## [1.0.3] - 2026-03-16
 ### Added
 - Trade History feature: Real-time display of executed trades with price, quantity, timestamp, and strategy information.

@@ -15,9 +15,16 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
 
   final List<Map<String, String>> _screenshots = [
     {
+      'path': 'assets/screenshots/screenshot_app_v1.0.6.png',
+      'title': 'Version 1.0.6 - RSI Strategy Tuning',
+      'description':
+          'Latest: Preset-based RSI controls in Settings and live algorithm labeling',
+    },
+    {
       'path': 'assets/screenshots/screenshot_app_v1.0.3.png',
       'title': 'Version 1.0.3 - Trade History',
-      'description': 'Latest: Real-time trade tracking with buy/sell indicators',
+      'description':
+          'Latest: Real-time trade tracking with buy/sell indicators',
     },
     {
       'path': 'assets/screenshots/screenshot_app_v1.0.2.png',
@@ -51,7 +58,10 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
               ),
               const Spacer(),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(12),
@@ -59,7 +69,10 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                 ),
                 child: Text(
                   '${_currentIndex + 1} / ${_screenshots.length}',
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                 ),
               ),
             ],
@@ -91,7 +104,9 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                       children: [
                         Expanded(
                           child: ClipRRect(
-                            borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                            borderRadius: const BorderRadius.vertical(
+                              top: Radius.circular(10),
+                            ),
                             child: Image.asset(
                               screenshot['path']!,
                               fit: BoxFit.contain,
@@ -114,7 +129,9 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                           padding: const EdgeInsets.all(12),
                           decoration: const BoxDecoration(
                             color: AppColors.surface,
-                            borderRadius: BorderRadius.vertical(bottom: Radius.circular(10)),
+                            borderRadius: BorderRadius.vertical(
+                              bottom: Radius.circular(10),
+                            ),
                           ),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
@@ -157,7 +174,7 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
                   shape: BoxShape.circle,
                   color: _currentIndex == entry.key
                       ? AppColors.glowCyan
-                      : AppColors.textMuted.withOpacity(0.6),
+                      : AppColors.textMuted.withValues(alpha: 0.6),
                 ),
               );
             }).toList(),

@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
+import '../trading/algo_strategy.dart';
 import '../trading/strategy.dart';
 import '../constants/symbols.dart';
 import '../models/connection_status.dart';
+import '../models/rsi_strategy_preset.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
@@ -265,7 +267,8 @@ class DashboardScreen extends ConsumerWidget {
                               _buildSignalPill(signalAsync),
                               if (currentStrategy != null)
                                 StatusPill(
-                                  label: 'Source: ${currentStrategy.name}',
+                                  label:
+                                      'Source: ${_strategyLabel(currentStrategy, ref)}',
                                   color: AppColors.glowCyan,
                                 ),
                             ],
@@ -532,6 +535,25 @@ class DashboardScreen extends ConsumerWidget {
     }
   }
 
+  String _strategyLabel(TradingStrategy? strategy, WidgetRef ref) {
+    if (strategy is RsiStrategy) {
+      final settings = ref.read(settingsServiceProvider);
+      final preset = findRsiStrategyPreset(
+        period: settings.getRsiPeriod(),
+        overbought: settings.getRsiOverbought(),
+        oversold: settings.getRsiOversold(),
+      );
+
+      if (preset != null) {
+        return '${strategy.name} (${preset.label})';
+      }
+
+      return '${strategy.name} (Custom)';
+    }
+
+    return strategy?.name ?? '--';
+  }
+
   Color _signalColor(TradingSignal? signal) {
     switch (signal) {
       case TradingSignal.buy:
@@ -658,7 +680,7 @@ class _DashboardBackdrop extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: RadialGradient(
                 colors: [
-                  AppColors.glowCyan.withOpacity(0.18),
+                  AppColors.glowCyan.withValues(alpha: 0.18),
                   Colors.transparent,
                 ],
               ),
@@ -674,7 +696,7 @@ class _DashboardBackdrop extends StatelessWidget {
             decoration: BoxDecoration(
               gradient: RadialGradient(
                 colors: [
-                  AppColors.glowAmber.withOpacity(0.16),
+                  AppColors.glowAmber.withValues(alpha: 0.16),
                   Colors.transparent,
                 ],
               ),

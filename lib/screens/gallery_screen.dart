@@ -9,9 +9,7 @@ class GalleryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('App Gallery'),
-      ),
+      appBar: AppBar(title: const Text('App Gallery')),
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
@@ -34,10 +32,7 @@ class GalleryScreen extends StatelessWidget {
             SizedBox(height: 8),
             Text(
               'Track the progress of the trading experience through key releases and UI milestones.',
-              style: TextStyle(
-                color: AppColors.textSecondary,
-                fontSize: 14,
-              ),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 14),
             ),
             SizedBox(height: 20),
             ScreenshotCarousel(),
@@ -51,6 +46,16 @@ class GalleryScreen extends StatelessWidget {
               ),
             ),
             SizedBox(height: 16),
+            _MilestoneCard(
+              version: '1.0.6',
+              date: '2026-03-19',
+              features: [
+                'RSI strategy tuning UI with preset chips and custom inputs',
+                'Settings screen persists RSI period and threshold values',
+                'Dashboard source label reflects the active RSI preset',
+                'Current screenshot refreshed to show the Settings workflow',
+              ],
+            ),
             _MilestoneCard(
               version: '1.0.3',
               date: '2026-03-16',
@@ -107,7 +112,10 @@ class _MilestoneCard extends StatelessWidget {
           Row(
             children: [
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 4,
+                ),
                 decoration: BoxDecoration(
                   color: AppColors.surfaceAlt,
                   borderRadius: BorderRadius.circular(12),

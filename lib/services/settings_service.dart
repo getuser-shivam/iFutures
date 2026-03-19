@@ -9,6 +9,9 @@ class SettingsService {
   static const _riskStopLoss = 'risk_stop_loss_percent';
   static const _riskTakeProfit = 'risk_take_profit_percent';
   static const _riskTradeQuantity = 'risk_trade_quantity';
+  static const _rsiPeriod = 'strategy_rsi_period';
+  static const _rsiOverbought = 'strategy_rsi_overbought';
+  static const _rsiOversold = 'strategy_rsi_oversold';
   static const _lastSelectedSymbol = 'last_selected_symbol';
   static const _symbolList = 'symbol_list';
 
@@ -26,14 +29,17 @@ class SettingsService {
 
   // API Key
   Future<String?> getApiKey() => _secureStorage.read(key: _apiKey);
-  Future<void> setApiKey(String value) => _secureStorage.write(key: _apiKey, value: value);
+  Future<void> setApiKey(String value) =>
+      _secureStorage.write(key: _apiKey, value: value);
 
   // API Secret
   Future<String?> getApiSecret() => _secureStorage.read(key: _apiSecret);
-  Future<void> setApiSecret(String value) => _secureStorage.write(key: _apiSecret, value: value);
+  Future<void> setApiSecret(String value) =>
+      _secureStorage.write(key: _apiSecret, value: value);
 
   // AI URL
-  String getAiUrl() => _prefs?.getString(_aiUrl) ?? 'https://your-ai-api.com/analyze';
+  String getAiUrl() =>
+      _prefs?.getString(_aiUrl) ?? 'https://your-ai-api.com/analyze';
   Future<void> setAiUrl(String value) async {
     await init();
     await _prefs?.setString(_aiUrl, value);
@@ -53,16 +59,37 @@ class SettingsService {
     await _prefs?.setDouble(_riskStopLoss, value);
   }
 
-  double getRiskTakeProfitPercent() => _prefs?.getDouble(_riskTakeProfit) ?? 2.0;
+  double getRiskTakeProfitPercent() =>
+      _prefs?.getDouble(_riskTakeProfit) ?? 2.0;
   Future<void> setRiskTakeProfitPercent(double value) async {
     await init();
     await _prefs?.setDouble(_riskTakeProfit, value);
   }
 
-  double getRiskTradeQuantity() => _prefs?.getDouble(_riskTradeQuantity) ?? 0.01;
+  double getRiskTradeQuantity() =>
+      _prefs?.getDouble(_riskTradeQuantity) ?? 0.01;
   Future<void> setRiskTradeQuantity(double value) async {
     await init();
     await _prefs?.setDouble(_riskTradeQuantity, value);
+  }
+
+  // RSI strategy tuning
+  int getRsiPeriod() => _prefs?.getInt(_rsiPeriod) ?? 14;
+  Future<void> setRsiPeriod(int value) async {
+    await init();
+    await _prefs?.setInt(_rsiPeriod, value);
+  }
+
+  double getRsiOverbought() => _prefs?.getDouble(_rsiOverbought) ?? 70.0;
+  Future<void> setRsiOverbought(double value) async {
+    await init();
+    await _prefs?.setDouble(_rsiOverbought, value);
+  }
+
+  double getRsiOversold() => _prefs?.getDouble(_rsiOversold) ?? 30.0;
+  Future<void> setRsiOversold(double value) async {
+    await init();
+    await _prefs?.setDouble(_rsiOversold, value);
   }
 
   // Last selected symbol

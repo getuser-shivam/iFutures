@@ -3,12 +3,13 @@
 Last updated: 2026-03-19
 
 ## Now
-- [ ] Strategy parameter tuning UI and presets.
-
-## Next
 - [ ] Multi-exchange support (Binance + Coinbase).
 
+## Next
+- [ ] Portfolio analytics dashboard.
+
 ## Done
+- [x] Strategy parameter tuning UI and presets.
 - [x] Add a trade export option (CSV) for analysis.
 - [x] Backtesting engine using historical klines.
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check.

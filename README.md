@@ -4,7 +4,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Versioning
 
-- **Current version:** `1.0.5+6` (see `pubspec.yaml`)
+- **Current version:** `1.0.6+7` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **TODOs:** [TODO.md](TODO.md)
 
@@ -18,8 +18,10 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Strategy Modes**: Manual-first dashboard with ALGO and AI modes available from the selector
 - **Bot Control**: Start/stop trading execution
 - **Configurable Symbols**: Manage the tradable symbol list from Settings
+- **RSI Strategy Presets**: Tune the algorithm with saved RSI period and threshold presets
 - **Risk Management**: Stop loss, take profit, and trade quantity configuration
 - **Persistent Trade History**: Entry/exit trades are saved locally and restored on startup
+- **App Gallery**: Built-in evolution gallery with the latest settings screenshot
 - **Resilient Market Stream**: WebSocket auto-reconnect with exponential backoff
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL
 - **Daily Performance Summary**: PnL, win rate, and drawdown for the current local day
@@ -34,7 +36,11 @@ iFutures is a multi-platform trading application that connects to Binance API an
 
 ### Windows Desktop Application
 ![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: App showing live price, RSI algorithm mode, backtest lab, and performance metrics*
+*Current state: Bot Settings showing RSI strategy tuning, symbol management, and risk controls*
+
+### App Gallery
+![iFutures App Gallery - Strategy Tuning](screenshot_app_gallery.png)
+*Current state: App Gallery highlighting the new RSI strategy tuning slide and milestone card*
 
 ## Development Status
 
@@ -50,6 +56,8 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Historical backtesting engine
 - [x] Multi-symbol selection
 - [x] Configurable symbol list in Settings
+- [x] RSI strategy presets and tuning controls in Settings
+- [x] App gallery refreshed with the current strategy tuning screenshot
 - [x] Persist trade history to disk and reload on startup
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
@@ -94,6 +102,7 @@ lib/
 |  |- price_alert.dart          # Price alert model and formatting helpers
 |  |- position.dart             # Open position model
 |  |- risk_settings.dart        # Risk configuration model
+|  |- rsi_strategy_preset.dart  # RSI preset definitions and helpers
 |  |- trade.dart                # Trade record model
 |- constants/
 |  |- symbols.dart              # Default tradable symbols
