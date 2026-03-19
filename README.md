@@ -10,7 +10,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Application Overview
 
-iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, CSV export, resilient reconnects, and automated bot control.
+iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, CSV export, resilient reconnects, historical backtesting, and automated bot control.
 
 ### Current Features
 
@@ -25,6 +25,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Daily Performance Summary**: PnL, win rate, and drawdown for the current local day
 - **Trade History**: Entry/exit trades with reasons and realized PnL
 - **CSV Export**: Trade history can be exported for offline analysis
+- **Backtesting Lab**: Historical candle simulation using the selected strategy and live risk rules
 - **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
 - **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy signal display
 - **Price Alerts**: Threshold-based one-shot alerts with toast notifications and rearm controls
@@ -33,7 +34,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 
 ### Windows Desktop Application
 ![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: App showing live price, manual mode, price alerts, and trade history export*
+*Current state: App showing live price, RSI algorithm mode, backtest lab, and performance metrics*
 
 ## Development Status
 
@@ -46,6 +47,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Risk settings (SL/TP/quantity)
 - [x] Paper trading with entry/exit and realized PnL
 - [x] Trade history and performance metrics
+- [x] Historical backtesting engine
 - [x] Multi-symbol selection
 - [x] Configurable symbol list in Settings
 - [x] Persist trade history to disk and reload on startup
@@ -86,6 +88,7 @@ lib/
 |- main.dart                    # App entry point
 |- models/
 |  |- connection_status.dart    # Market connection state model
+|  |- backtest_result.dart      # Backtest result data model
 |  |- kline.dart                # OHLCV candlestick data model
 |  |- performance_summary.dart  # Performance summary data model
 |  |- price_alert.dart          # Price alert model and formatting helpers
@@ -102,6 +105,7 @@ lib/
 |  |- gallery_screen.dart       # App gallery
 |- services/
 |  |- binance_api.dart          # Binance REST API client
+|  |- backtest_service.dart     # Historical strategy simulation engine
 |  |- binance_ws.dart           # Binance WebSocket connection
 |  |- reconnect_backoff.dart    # Exponential retry delay helper
 |  |- reconnecting_websocket.dart # Resilient WebSocket wrapper
@@ -124,6 +128,7 @@ lib/
 |  |  |- status_pill.dart       # Compact status badge
 |  |- dashboard/
 |  |  |- daily_performance_card.dart # Daily realized PnL summary
+|  |  |- backtest_card.dart       # Historical backtest dashboard card
 |  |  |- mode_selector.dart       # Strategy mode toggle
 |  |  |- open_position_card.dart  # Open position summary
 |  |  |- price_alert_listener.dart # Dashboard alert toast listener

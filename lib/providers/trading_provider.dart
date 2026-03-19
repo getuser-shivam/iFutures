@@ -1,6 +1,7 @@
-﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
+import '../services/backtest_service.dart';
 import '../services/settings_service.dart';
 import '../services/price_alert_service.dart';
 import '../services/trade_csv_export_service.dart';
@@ -30,6 +31,10 @@ final tradeCsvExportServiceProvider = Provider<TradeCsvExportService>((ref) {
   return TradeCsvExportService();
 });
 
+final backtestServiceProvider = Provider<BacktestService>((ref) {
+  return const BacktestService();
+});
+
 final priceAlertServiceProvider = Provider<PriceAlertService>((ref) {
   return PriceAlertService();
 });
@@ -42,10 +47,10 @@ final settingsInitProvider = FutureProvider<void>((ref) async {
 final binanceApiProvider = FutureProvider<BinanceApiService>((ref) async {
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
-  
+
   final apiKey = await settings.getApiKey() ?? '';
   final apiSecret = await settings.getApiSecret() ?? '';
-  
+
   return BinanceApiService(
     apiKey: apiKey,
     apiSecret: apiSecret,
@@ -62,10 +67,7 @@ final binanceWsProvider = FutureProvider<BinanceWebSocketService>((ref) async {
 final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
-  return AiStrategy(
-    apiUrl: settings.getAiUrl(),
-    apiKey: 'your_ai_key',
-  );
+  return AiStrategy(apiUrl: settings.getAiUrl(), apiKey: 'your_ai_key');
 });
 
 class SelectedSymbolNotifier extends StateNotifier<String> {
@@ -89,10 +91,11 @@ class SelectedSymbolNotifier extends StateNotifier<String> {
   }
 }
 
-final selectedSymbolProvider = StateNotifierProvider<SelectedSymbolNotifier, String>((ref) {
-  final settings = ref.watch(settingsServiceProvider);
-  return SelectedSymbolNotifier(settings);
-});
+final selectedSymbolProvider =
+    StateNotifierProvider<SelectedSymbolNotifier, String>((ref) {
+      final settings = ref.watch(settingsServiceProvider);
+      return SelectedSymbolNotifier(settings);
+    });
 
 final symbolListProvider = FutureProvider<List<String>>((ref) async {
   await ref.watch(settingsInitProvider.future);
@@ -118,17 +121,20 @@ final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
   return ManualStrategy();
 });
 
-final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref, symbol) async {
+final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((
+  ref,
+  symbol,
+) async {
   final api = await ref.watch(binanceApiProvider.future);
   final ws = await ref.watch(binanceWsProvider.future);
   final history = ref.watch(tradeHistoryServiceProvider);
   final riskSettings = await ref.watch(riskSettingsProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
-  
+
   if (strategy == null) {
     throw Exception('Strategy not initialized');
   }
-  
+
   final engine = TradingEngine(
     apiService: api,
     wsService: ws,
@@ -137,22 +143,28 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((ref,
     riskSettings: riskSettings,
     symbol: symbol,
   );
-  
+
   ref.onDispose(() {
     engine.dispose();
   });
-  
+
   return engine;
 });
 
-final tickerStreamProvider = StreamProvider.family<dynamic, String>((ref, symbol) async* {
+final tickerStreamProvider = StreamProvider.family<dynamic, String>((
+  ref,
+  symbol,
+) async* {
   final ws = await ref.watch(binanceWsProvider.future);
   yield* ws.subscribeToTicker(symbol);
 });
 
-final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, symbol) async* {
+final klineStreamProvider = StreamProvider.family<List<Kline>, String>((
+  ref,
+  symbol,
+) async* {
   final engineAsync = ref.watch(tradingEngineProvider(symbol));
-  
+
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
     yield engine.klines;
@@ -165,9 +177,12 @@ final klineStreamProvider = StreamProvider.family<List<Kline>, String>((ref, sym
   }
 });
 
-final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, symbol) async* {
+final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((
+  ref,
+  symbol,
+) async* {
   final engineAsync = ref.watch(tradingEngineProvider(symbol));
-  
+
   if (engineAsync is AsyncData<TradingEngine>) {
     final engine = engineAsync.value;
     yield engine.trades;
@@ -180,12 +195,18 @@ final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, sym
   }
 });
 
-final priceAlertsProvider = FutureProvider.family<List<PriceAlert>, String>((ref, symbol) async {
+final priceAlertsProvider = FutureProvider.family<List<PriceAlert>, String>((
+  ref,
+  symbol,
+) async {
   final service = ref.watch(priceAlertServiceProvider);
   return service.loadAlerts(symbol);
 });
 
-final positionStreamProvider = StreamProvider.family<Position?, String>((ref, symbol) async* {
+final positionStreamProvider = StreamProvider.family<Position?, String>((
+  ref,
+  symbol,
+) async* {
   final engineAsync = ref.watch(tradingEngineProvider(symbol));
 
   if (engineAsync is AsyncData<TradingEngine>) {
@@ -200,7 +221,10 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((ref, sy
   }
 });
 
-final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((ref, symbol) async* {
+final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((
+  ref,
+  symbol,
+) async* {
   final engineAsync = ref.watch(tradingEngineProvider(symbol));
 
   if (engineAsync is AsyncData<TradingEngine>) {
@@ -215,18 +239,21 @@ final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((ref,
   }
 });
 
-final connectionStatusProvider = StreamProvider.family<ConnectionStatus, String>((ref, symbol) async* {
-  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+final connectionStatusProvider =
+    StreamProvider.family<ConnectionStatus, String>((ref, symbol) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
 
-  if (engineAsync is AsyncData<TradingEngine>) {
-    final engine = engineAsync.value;
-    if (!engine.isStreaming) {
-      await engine.startMarketData();
-    }
-    yield* engine.connectionStream;
-  } else {
-    yield ConnectionStatus.disconnected();
-  }
-});
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.connectionStream;
+      } else {
+        yield ConnectionStatus.disconnected();
+      }
+    });
 
-final isBotRunningProvider = StateProvider.family<bool, String>((ref, symbol) => false);
+final isBotRunningProvider = StateProvider.family<bool, String>(
+  (ref, symbol) => false,
+);

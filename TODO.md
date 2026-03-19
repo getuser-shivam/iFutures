@@ -3,17 +3,14 @@
 Last updated: 2026-03-19
 
 ## Now
-- [ ] Backtesting engine using historical klines.
+- [ ] Strategy parameter tuning UI and presets.
 
 ## Next
-- [ ] Strategy parameter tuning UI and presets.
-
-## Later
-- [ ] Strategy parameter tuning UI and presets.
 - [ ] Multi-exchange support (Binance + Coinbase).
 
 ## Done
 - [x] Add a trade export option (CSV) for analysis.
+- [x] Backtesting engine using historical klines.
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check.
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI.
 - [x] Shared toast helper for transient in-app notifications.

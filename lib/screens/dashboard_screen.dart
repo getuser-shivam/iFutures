@@ -1,4 +1,4 @@
-﻿import 'package:flutter/material.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
@@ -10,6 +10,7 @@ import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
 import '../widgets/dashboard/daily_performance_card.dart';
+import '../widgets/dashboard/backtest_card.dart';
 import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_alert_listener.dart';
 import '../widgets/dashboard/price_alerts_card.dart';
@@ -50,9 +51,7 @@ class DashboardScreen extends ConsumerWidget {
     }
 
     if (settingsInit.isLoading) {
-      return const Scaffold(
-        body: Center(child: CircularProgressIndicator()),
-      );
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
     if (settingsInit.hasError) {
@@ -124,7 +123,11 @@ class DashboardScreen extends ConsumerWidget {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.candlestick_chart, color: AppColors.textSecondary, size: 20),
+                              const Icon(
+                                Icons.candlestick_chart,
+                                color: AppColors.textSecondary,
+                                size: 20,
+                              ),
                               const SizedBox(width: 8),
                               const Text(
                                 'Price Action',
@@ -136,7 +139,10 @@ class DashboardScreen extends ConsumerWidget {
                               ),
                               const Spacer(),
                               Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
                                 decoration: BoxDecoration(
                                   color: AppColors.surfaceAlt,
                                   borderRadius: BorderRadius.circular(10),
@@ -144,7 +150,10 @@ class DashboardScreen extends ConsumerWidget {
                                 ),
                                 child: const Text(
                                   'Last 50 candles',
-                                  style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 11,
+                                  ),
                                 ),
                               ),
                             ],
@@ -162,14 +171,15 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: OpenPositionCard(symbol: symbol, latestPrice: latestPrice),
+                    child: OpenPositionCard(
+                      symbol: symbol,
+                      latestPrice: latestPrice,
+                    ),
                   ),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: RiskSummaryCard(),
-                  ),
+                  sliver: SliverToBoxAdapter(child: RiskSummaryCard()),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
@@ -181,6 +191,12 @@ class DashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: PerformanceMetrics(symbol: symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: BacktestCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
@@ -198,7 +214,11 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
                   sliver: SliverToBoxAdapter(
-                    child: _buildStatusRow(isRunning, engineAsync, connectionStatus),
+                    child: _buildStatusRow(
+                      isRunning,
+                      engineAsync,
+                      connectionStatus,
+                    ),
                   ),
                 ),
                 SliverToBoxAdapter(
@@ -231,7 +251,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Manual actions stay available in every mode. If AI or the selected algorithm opens the position, you can still take over with LONG, SHORT, or CLOSE.',
+                            'Manual actions stay available in every mode. If AI or the selected algorithm opens the position, LONG, SHORT, and CLOSE stay available so you can take over instantly.',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,
@@ -261,7 +281,8 @@ class DashboardScreen extends ConsumerWidget {
                                   onPressed: engineAsync.isLoading
                                       ? null
                                       : () async {
-                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                          if (engineAsync
+                                              is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
                                             await _ensureMarketData(engine);
                                             await engine.manualEnterLong();
@@ -278,7 +299,8 @@ class DashboardScreen extends ConsumerWidget {
                                   onPressed: engineAsync.isLoading
                                       ? null
                                       : () async {
-                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                          if (engineAsync
+                                              is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
                                             await _ensureMarketData(engine);
                                             await engine.manualEnterShort();
@@ -295,7 +317,8 @@ class DashboardScreen extends ConsumerWidget {
                                   onPressed: engineAsync.isLoading
                                       ? null
                                       : () async {
-                                          if (engineAsync is AsyncData<TradingEngine>) {
+                                          if (engineAsync
+                                              is AsyncData<TradingEngine>) {
                                             final engine = engineAsync.value;
                                             await _ensureMarketData(engine);
                                             await engine.manualClose();
@@ -324,9 +347,17 @@ class DashboardScreen extends ConsumerWidget {
                               onPressed: isRunning || engineAsync.isLoading
                                   ? null
                                   : () async {
-                                      if (engineAsync is AsyncData<TradingEngine>) {
+                                      if (engineAsync
+                                          is AsyncData<TradingEngine>) {
                                         final engine = engineAsync.value;
-                                        ref.read(isBotRunningProvider(symbol).notifier).state = true;
+                                        ref
+                                                .read(
+                                                  isBotRunningProvider(
+                                                    symbol,
+                                                  ).notifier,
+                                                )
+                                                .state =
+                                            true;
                                         await engine.enableTrading();
                                       }
                                     },
@@ -341,9 +372,17 @@ class DashboardScreen extends ConsumerWidget {
                               onPressed: !isRunning || engineAsync.isLoading
                                   ? null
                                   : () {
-                                      if (engineAsync is AsyncData<TradingEngine>) {
+                                      if (engineAsync
+                                          is AsyncData<TradingEngine>) {
                                         final engine = engineAsync.value;
-                                        ref.read(isBotRunningProvider(symbol).notifier).state = false;
+                                        ref
+                                                .read(
+                                                  isBotRunningProvider(
+                                                    symbol,
+                                                  ).notifier,
+                                                )
+                                                .state =
+                                            false;
                                         engine.disableTrading();
                                       }
                                     },
@@ -362,7 +401,11 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeader(BuildContext context, AsyncValue<dynamic> ticker, String symbol) {
+  Widget _buildHeader(
+    BuildContext context,
+    AsyncValue<dynamic> ticker,
+    String symbol,
+  ) {
     final textTheme = Theme.of(context).textTheme;
 
     return AppPanel(
@@ -406,7 +449,10 @@ class DashboardScreen extends ConsumerWidget {
                       ),
                       const SizedBox(width: 8),
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
                         decoration: BoxDecoration(
                           color: AppColors.surfaceAlt,
                           borderRadius: BorderRadius.circular(10),
@@ -430,7 +476,10 @@ class DashboardScreen extends ConsumerWidget {
                   width: 28,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 ),
-                error: (e, s) => Text('Error: $e', style: const TextStyle(color: AppColors.negative)),
+                error: (e, s) => Text(
+                  'Error: $e',
+                  style: const TextStyle(color: AppColors.negative),
+                ),
               ),
               const SizedBox(height: 8),
               Text(
@@ -448,9 +497,7 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Future<void> _ensureMarketData(
-    TradingEngine engine,
-  ) async {
+  Future<void> _ensureMarketData(TradingEngine engine) async {
     if (!engine.isStreaming) {
       await engine.startMarketData();
     }
@@ -467,10 +514,8 @@ class DashboardScreen extends ConsumerWidget {
         label: 'Signal: ...',
         color: AppColors.textSecondary,
       ),
-      error: (_, __) => const StatusPill(
-        label: 'Signal: Error',
-        color: AppColors.warning,
-      ),
+      error: (_, __) =>
+          const StatusPill(label: 'Signal: Error', color: AppColors.warning),
     );
   }
 
@@ -556,9 +601,15 @@ class DashboardScreen extends ConsumerWidget {
 
         switch (data.state) {
           case MarketConnectionState.connecting:
-            return const StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber);
+            return const StatusPill(
+              label: 'Market: Connecting',
+              color: AppColors.glowAmber,
+            );
           case MarketConnectionState.connected:
-            return StatusPill(label: 'Market: Live | $latency', color: AppColors.glowCyan);
+            return StatusPill(
+              label: 'Market: Live | $latency',
+              color: AppColors.glowCyan,
+            );
           case MarketConnectionState.stale:
             return StatusPill(
               label: 'Market: Slow | ${ageSeconds ?? '-'}s',
@@ -575,11 +626,18 @@ class DashboardScreen extends ConsumerWidget {
               color: AppColors.warning,
             );
           case MarketConnectionState.disconnected:
-            return const StatusPill(label: 'Market: Offline', color: AppColors.negative);
+            return const StatusPill(
+              label: 'Market: Offline',
+              color: AppColors.negative,
+            );
         }
       },
-      loading: () => const StatusPill(label: 'Market: Connecting', color: AppColors.glowAmber),
-      error: (e, _) => const StatusPill(label: 'Market: Error', color: AppColors.negative),
+      loading: () => const StatusPill(
+        label: 'Market: Connecting',
+        color: AppColors.glowAmber,
+      ),
+      error: (e, _) =>
+          const StatusPill(label: 'Market: Error', color: AppColors.negative),
     );
   }
 }
@@ -657,14 +715,10 @@ class _SymbolDropdown extends StatelessWidget {
           style: const TextStyle(color: AppColors.textPrimary),
           onChanged: onChanged,
           items: symbols
-              .map((s) => DropdownMenuItem<String>(
-                    value: s,
-                    child: Text(s),
-                  ))
+              .map((s) => DropdownMenuItem<String>(value: s, child: Text(s)))
               .toList(),
         ),
       ),
     );
   }
 }
-
