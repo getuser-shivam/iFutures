@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
@@ -484,6 +484,20 @@ class DashboardScreen extends ConsumerWidget {
     }
   }
 
+  String _formatRetryDelay(int delayMs) {
+    if (delayMs < 1000) {
+      return '${delayMs}ms';
+    }
+
+    final seconds = (delayMs / 1000).ceil();
+    if (seconds < 60) {
+      return '${seconds}s';
+    }
+
+    final minutes = (seconds / 60).ceil();
+    return '${minutes}m';
+  }
+
   Widget _buildStatusRow(
     bool isRunning,
     AsyncValue<TradingEngine> engineAsync,
@@ -532,6 +546,16 @@ class DashboardScreen extends ConsumerWidget {
           case MarketConnectionState.stale:
             return StatusPill(
               label: 'Market: Slow | ${ageSeconds ?? '-'}s',
+              color: AppColors.warning,
+            );
+          case MarketConnectionState.reconnecting:
+            final delay = data.retryDelayMs == null
+                ? null
+                : _formatRetryDelay(data.retryDelayMs!);
+            final attempt = data.retryAttempt ?? 1;
+            final suffix = delay == null ? '' : ' in $delay';
+            return StatusPill(
+              label: 'Market: Reconnecting #$attempt$suffix',
               color: AppColors.warning,
             );
           case MarketConnectionState.disconnected:
@@ -627,5 +651,4 @@ class _SymbolDropdown extends StatelessWidget {
     );
   }
 }
-
 

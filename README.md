@@ -1,4 +1,4 @@
-# iFutures - Automated Trading Bot
+﻿# iFutures - Automated Trading Bot
 
 A Flutter-based trading bot application for automated cryptocurrency trading with AI and algorithmic strategies.
 
@@ -10,7 +10,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Application Overview
 
-iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, and automated bot control.
+iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, resilient reconnects, and automated bot control.
 
 ### Current Features
 
@@ -20,10 +20,11 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Configurable Symbols**: Manage the tradable symbol list from Settings
 - **Risk Management**: Stop loss, take profit, and trade quantity configuration
 - **Persistent Trade History**: Entry/exit trades are saved locally and restored on startup
+- **Resilient Market Stream**: WebSocket auto-reconnect with exponential backoff
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL
 - **Trade History**: Entry/exit trades with reasons and realized PnL
 - **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
-- **Status Indicators**: Bot running state, engine status, and strategy signal display
+- **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy signal display
 
 ## Screenshots
 
@@ -47,6 +48,8 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Persist trade history to disk and reload on startup
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
+- [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
+- [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check
 
 ### Roadmap
 See [TODO.md](TODO.md) for current priorities and upcoming work.
@@ -77,6 +80,7 @@ flutter run -d linux
 lib/
 |- main.dart                    # App entry point
 |- models/
+|  |- connection_status.dart    # Market connection state model
 |  |- kline.dart                # OHLCV candlestick data model
 |  |- position.dart             # Open position model
 |  |- risk_settings.dart        # Risk configuration model
@@ -92,6 +96,8 @@ lib/
 |- services/
 |  |- binance_api.dart          # Binance REST API client
 |  |- binance_ws.dart           # Binance WebSocket connection
+|  |- reconnect_backoff.dart    # Exponential retry delay helper
+|  |- reconnecting_websocket.dart # Resilient WebSocket wrapper
 |  |- settings_service.dart     # Settings storage
 |  |- trade_history_service.dart # Local trade history persistence
 |- trading/

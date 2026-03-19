@@ -1,5 +1,7 @@
+﻿const String defaultSymbol = 'GALAUSDT';
+
 const List<String> defaultSymbols = [
-  'GALAUSDT',
+  defaultSymbol,
   'BTCUSDT',
   'ETHUSDT',
   'BNBUSDT',

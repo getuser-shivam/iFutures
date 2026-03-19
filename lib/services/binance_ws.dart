@@ -1,9 +1,10 @@
-import 'dart:convert';
-import 'package:web_socket_channel/web_socket_channel.dart';
+﻿import 'dart:convert';
+
+import '../models/connection_status.dart';
+import 'reconnecting_websocket.dart';
 
 class BinanceWebSocketService {
   final bool isTestnet;
-  WebSocketChannel? _channel;
 
   String get baseWsUrl => isTestnet
       ? 'wss://fstream.binancefuture.com/ws'
@@ -11,23 +12,30 @@ class BinanceWebSocketService {
 
   BinanceWebSocketService({this.isTestnet = true});
 
-  Stream<dynamic> subscribeToKlines(String symbol, {String interval = '1m'}) {
+  Stream<dynamic> subscribeToKlines(
+    String symbol, {
+    String interval = '1m',
+    void Function(ConnectionStatus status)? onStatusChanged,
+  }) {
     final channelName = '${symbol.toLowerCase()}@kline_$interval';
-    final url = '$baseWsUrl/$channelName';
-    
-    _channel = WebSocketChannel.connect(Uri.parse(url));
-    return _channel!.stream.map((event) => jsonDecode(event));
+    final url = Uri.parse('$baseWsUrl/$channelName');
+    final connection = ReconnectingWebSocket(
+      url: url,
+      onStatusChanged: onStatusChanged,
+    );
+    return connection.stream.map((event) => jsonDecode(event as String));
   }
 
-  Stream<dynamic> subscribeToTicker(String symbol) {
+  Stream<dynamic> subscribeToTicker(
+    String symbol, {
+    void Function(ConnectionStatus status)? onStatusChanged,
+  }) {
     final channelName = '${symbol.toLowerCase()}@ticker';
-    final url = '$baseWsUrl/$channelName';
-    
-    _channel = WebSocketChannel.connect(Uri.parse(url));
-    return _channel!.stream.map((event) => jsonDecode(event));
-  }
-
-  void disconnect() {
-    _channel?.sink.close();
+    final url = Uri.parse('$baseWsUrl/$channelName');
+    final connection = ReconnectingWebSocket(
+      url: url,
+      onStatusChanged: onStatusChanged,
+    );
+    return connection.stream.map((event) => jsonDecode(event as String));
   }
 }

@@ -1,4 +1,4 @@
-import 'dart:async';
+﻿import 'dart:async';
 import '../models/kline.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
@@ -76,7 +76,10 @@ class TradingEngine {
     }
 
     // 2. Subscribe to real-time updates
-    _wsSubscription = wsService.subscribeToKlines(symbol).listen((event) {
+    _wsSubscription = wsService.subscribeToKlines(
+      symbol,
+      onStatusChanged: _handleConnectionStatusUpdate,
+    ).listen((event) {
       _recordMessageTimestamp(event);
       final kline = Kline.fromWsJson(event);
       _updateKlines(kline);
@@ -367,6 +370,16 @@ class TradingEngine {
     );
   }
 
+  void _handleConnectionStatusUpdate(ConnectionStatus status) {
+    if (_connectionController.isClosed) return;
+
+    _connectionController.add(
+      status.copyWith(
+        lastMessageAt: status.lastMessageAt ?? _lastMessageAt,
+        latencyMs: status.latencyMs ?? _lastLatencyMs,
+      ),
+    );
+  }
   Future<void> clearTrades() async {
     _trades = [];
     _tradeController.add(_trades);

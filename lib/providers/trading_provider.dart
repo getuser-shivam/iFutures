@@ -1,4 +1,4 @@
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+﻿import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
@@ -56,19 +56,17 @@ final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
   );
 });
 
-const _defaultSymbol = 'GALAUSDT';
-
 class SelectedSymbolNotifier extends StateNotifier<String> {
   final SettingsService _settings;
 
-  SelectedSymbolNotifier(this._settings) : super(_defaultSymbol) {
+  SelectedSymbolNotifier(this._settings) : super(defaultSymbol) {
     _load();
   }
 
   Future<void> _load() async {
     await _settings.init();
     final saved = _settings.getLastSelectedSymbol();
-    if (state == _defaultSymbol && saved != null && saved.isNotEmpty) {
+    if (state == defaultSymbol && saved != null && saved.isNotEmpty) {
       state = saved;
     }
   }
