@@ -9,6 +9,7 @@ import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
+import '../widgets/dashboard/daily_performance_card.dart';
 import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_alert_listener.dart';
 import '../widgets/dashboard/price_alerts_card.dart';
@@ -173,13 +174,19 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: PriceAlertsCard(symbol: symbol),
+                    child: DailyPerformanceCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: PerformanceMetrics(symbol: symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: PriceAlertsCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(

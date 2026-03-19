@@ -22,6 +22,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Persistent Trade History**: Entry/exit trades are saved locally and restored on startup
 - **Resilient Market Stream**: WebSocket auto-reconnect with exponential backoff
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL
+- **Daily Performance Summary**: PnL, win rate, and drawdown for the current local day
 - **Trade History**: Entry/exit trades with reasons and realized PnL
 - **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
 - **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy signal display
@@ -51,6 +52,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Strategy signal indicator for AI/ALGO decisions
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
 - [x] Price alerts with toast notifications and rearmable dashboard cards
+- [x] Daily performance summary card with PnL, win rate, and drawdown
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check
 
 ### Roadmap
@@ -84,6 +86,7 @@ lib/
 |- models/
 |  |- connection_status.dart    # Market connection state model
 |  |- kline.dart                # OHLCV candlestick data model
+|  |- performance_summary.dart  # Performance summary data model
 |  |- price_alert.dart          # Price alert model and formatting helpers
 |  |- position.dart             # Open position model
 |  |- risk_settings.dart        # Risk configuration model
@@ -101,6 +104,7 @@ lib/
 |  |- binance_ws.dart           # Binance WebSocket connection
 |  |- reconnect_backoff.dart    # Exponential retry delay helper
 |  |- reconnecting_websocket.dart # Resilient WebSocket wrapper
+|  |- performance_summary_calculator.dart # Shared performance summary logic
 |  |- price_alert_service.dart   # Persistent alert storage and evaluation
 |  |- settings_service.dart     # Settings storage
 |  |- trade_history_service.dart # Local trade history persistence
@@ -117,6 +121,7 @@ lib/
 |  |  |- app_toast.dart         # Shared floating snackbar helper
 |  |  |- status_pill.dart       # Compact status badge
 |  |- dashboard/
+|  |  |- daily_performance_card.dart # Daily realized PnL summary
 |  |  |- mode_selector.dart       # Strategy mode toggle
 |  |  |- open_position_card.dart  # Open position summary
 |  |  |- price_alert_listener.dart # Dashboard alert toast listener

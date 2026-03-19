@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../models/trade.dart';
+import '../../models/performance_summary.dart';
 import '../../providers/trading_provider.dart';
+import '../../services/performance_summary_calculator.dart';
 import '../../theme/app_theme.dart';
 import '../common/app_panel.dart';
 
@@ -32,22 +33,25 @@ class PerformanceMetrics extends ConsumerWidget {
               ),
               const Spacer(),
               trades.when(
-                data: (tradeList) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: _getOverallPerformanceColor(tradeList),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    _getOverallPerformanceText(tradeList),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.4,
+                data: (tradeList) {
+                  final summary = PerformanceSummaryCalculator.calculate(tradeList);
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: _getOverallPerformanceColor(summary),
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  ),
-                ),
+                    child: Text(
+                      _getOverallPerformanceText(summary),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.4,
+                      ),
+                    ),
+                  );
+                },
                 loading: () => const SizedBox.shrink(),
                 error: (_, __) => const SizedBox.shrink(),
               ),
@@ -55,18 +59,23 @@ class PerformanceMetrics extends ConsumerWidget {
           ),
           const SizedBox(height: 16),
           trades.when(
-            data: (tradeList) => tradeList.isEmpty
-                ? const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(32),
-                      child: Text(
-                        'No trades yet.\nStart the bot or use Manual mode to generate trades.',
-                        style: TextStyle(color: AppColors.textSecondary),
-                        textAlign: TextAlign.center,
-                      ),
+            data: (tradeList) {
+              if (tradeList.isEmpty) {
+                return const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(32),
+                    child: Text(
+                      'No trades yet.\nStart the bot or use Manual mode to generate trades.',
+                      style: TextStyle(color: AppColors.textSecondary),
+                      textAlign: TextAlign.center,
                     ),
-                  )
-                : _buildMetricsGrid(tradeList),
+                  ),
+                );
+              }
+
+              final summary = PerformanceSummaryCalculator.calculate(tradeList);
+              return _buildMetricsGrid(summary);
+            },
             loading: () => const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),
@@ -89,9 +98,7 @@ class PerformanceMetrics extends ConsumerWidget {
     );
   }
 
-  Widget _buildMetricsGrid(List<Trade> trades) {
-    final metrics = _calculateMetrics(trades);
-
+  Widget _buildMetricsGrid(PerformanceSummary summary) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final crossAxisCount = constraints.maxWidth > 900 ? 4 : 2;
@@ -104,51 +111,51 @@ class PerformanceMetrics extends ConsumerWidget {
           children: [
             _MetricTile(
               title: 'Total Trades',
-              value: metrics['totalTrades'].toString(),
+              value: summary.totalTrades.toString(),
               icon: Icons.swap_horiz,
               color: AppColors.glowCyan,
             ),
             _MetricTile(
               title: 'Win Rate',
-              value: '${metrics['winRate']}%',
+              value: '${summary.winRate.toStringAsFixed(0)}%',
               icon: Icons.trending_up,
-              color: metrics['winRate'] >= 50 ? AppColors.positive : AppColors.negative,
+              color: summary.winRate >= 50 ? AppColors.positive : AppColors.negative,
             ),
             _MetricTile(
               title: 'Total P&L',
-              value: '\$${metrics['totalPnL'].toStringAsFixed(4)}',
-              icon: metrics['totalPnL'] >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
-              color: metrics['totalPnL'] >= 0 ? AppColors.positive : AppColors.negative,
+              value: '\$${summary.totalPnL.toStringAsFixed(4)}',
+              icon: summary.totalPnL >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
+              color: summary.totalPnL >= 0 ? AppColors.positive : AppColors.negative,
             ),
             _MetricTile(
               title: 'Best Trade',
-              value: '\$${metrics['bestTrade'].toStringAsFixed(4)}',
+              value: '\$${summary.bestTrade.toStringAsFixed(4)}',
               icon: Icons.star,
               color: AppColors.glowAmber,
             ),
             _MetricTile(
               title: 'Worst Trade',
-              value: '\$${metrics['worstTrade'].toStringAsFixed(4)}',
+              value: '\$${summary.worstTrade.toStringAsFixed(4)}',
               icon: Icons.warning,
               color: AppColors.warning,
             ),
             _MetricTile(
               title: 'Avg Trade',
-              value: '\$${metrics['avgTrade'].toStringAsFixed(4)}',
+              value: '\$${summary.avgTrade.toStringAsFixed(4)}',
               icon: Icons.calculate,
               color: AppColors.textSecondary,
             ),
             _MetricTile(
               title: 'Max Drawdown',
-              value: '${metrics['maxDrawdown']}%',
+              value: '${summary.maxDrawdown.toStringAsFixed(0)}%',
               icon: Icons.trending_down,
               color: AppColors.negative,
             ),
             _MetricTile(
               title: 'Profit Factor',
-              value: metrics['profitFactor'].toStringAsFixed(2),
+              value: _formatProfitFactor(summary.profitFactor),
               icon: Icons.score,
-              color: metrics['profitFactor'] >= 1.5 ? AppColors.positive : AppColors.negative,
+              color: summary.profitFactor >= 1.5 ? AppColors.positive : AppColors.negative,
             ),
           ],
         );
@@ -156,94 +163,26 @@ class PerformanceMetrics extends ConsumerWidget {
     );
   }
 
-  Map<String, dynamic> _calculateMetrics(List<Trade> trades) {
-    final realizedTrades = trades.where((trade) => trade.kind == 'EXIT' && trade.realizedPnl != null).toList();
-
-    if (realizedTrades.isEmpty) {
-      return {
-        'totalTrades': 0,
-        'winRate': 0.0,
-        'totalPnL': 0.0,
-        'bestTrade': 0.0,
-        'worstTrade': 0.0,
-        'avgTrade': 0.0,
-        'maxDrawdown': 0.0,
-        'profitFactor': 0.0,
-      };
-    }
-
-    // Calculate basic metrics based on realized PnL
-    final winningTrades = realizedTrades.where((trade) => trade.realizedPnl! > 0).toList();
-    final losingTrades = realizedTrades.where((trade) => trade.realizedPnl! < 0).toList();
-
-    final totalTrades = realizedTrades.length;
-    final winRate = (winningTrades.length / totalTrades) * 100;
-
-    final tradePnLs = realizedTrades.map((trade) => trade.realizedPnl!).toList();
-    final totalPnL = tradePnLs.reduce((a, b) => a + b);
-    final bestTrade = tradePnLs.isEmpty ? 0.0 : tradePnLs.reduce((a, b) => a > b ? a : b);
-    final worstTrade = tradePnLs.isEmpty ? 0.0 : tradePnLs.reduce((a, b) => a < b ? a : b);
-    final avgTrade = tradePnLs.isEmpty ? 0.0 : totalPnL / totalTrades;
-
-    // Calculate drawdown (simplified)
-    double maxDrawdown = 0.0;
-    double peak = 0.0;
-    double currentDrawdown = 0.0;
-
-    for (final pnl in tradePnLs) {
-      currentDrawdown += pnl;
-      if (currentDrawdown > peak) {
-        peak = currentDrawdown;
-      }
-      if (peak > 0) {
-        final drawdown = ((peak - currentDrawdown) / peak) * 100;
-        if (drawdown > maxDrawdown) {
-          maxDrawdown = drawdown;
-        }
-      }
-    }
-
-    // Calculate profit factor
-    final grossProfit = winningTrades.fold(0.0, (sum, trade) => sum + trade.realizedPnl!.abs());
-    final grossLoss = losingTrades.fold(0.0, (sum, trade) => sum + trade.realizedPnl!.abs());
-    final profitFactor = grossLoss == 0 ? double.infinity : grossProfit / grossLoss;
-
-    return {
-      'totalTrades': totalTrades,
-      'winRate': winRate.round(),
-      'totalPnL': totalPnL,
-      'bestTrade': bestTrade,
-      'worstTrade': worstTrade,
-      'avgTrade': avgTrade,
-      'maxDrawdown': maxDrawdown.round(),
-      'profitFactor': profitFactor.isInfinite ? 999.99 : profitFactor,
-    };
-  }
-
-  Color _getOverallPerformanceColor(List<Trade> trades) {
-    final metrics = _calculateMetrics(trades);
-    final winRate = metrics['winRate'];
-    final totalPnL = metrics['totalPnL'];
-    final totalTrades = metrics['totalTrades'];
-
-    if (totalTrades == 0) return AppColors.textMuted;
-    if (winRate >= 60 && totalPnL > 0) return AppColors.positive;
-    if (winRate >= 50 && totalPnL > 0) return AppColors.glowCyan;
-    if (winRate >= 40) return AppColors.warning;
+  Color _getOverallPerformanceColor(PerformanceSummary summary) {
+    if (summary.totalTrades == 0) return AppColors.textMuted;
+    if (summary.winRate >= 60 && summary.totalPnL > 0) return AppColors.positive;
+    if (summary.winRate >= 50 && summary.totalPnL > 0) return AppColors.glowCyan;
+    if (summary.winRate >= 40) return AppColors.warning;
     return AppColors.negative;
   }
 
-  String _getOverallPerformanceText(List<Trade> trades) {
-    final metrics = _calculateMetrics(trades);
-    final winRate = metrics['winRate'];
-    final totalTrades = metrics['totalTrades'];
-
-    if (totalTrades == 0) return 'NO DATA';
-    if (winRate >= 70) return 'EXCELLENT';
-    if (winRate >= 60) return 'GOOD';
-    if (winRate >= 50) return 'FAIR';
-    if (winRate >= 40) return 'POOR';
+  String _getOverallPerformanceText(PerformanceSummary summary) {
+    if (summary.totalTrades == 0) return 'NO DATA';
+    if (summary.winRate >= 70) return 'EXCELLENT';
+    if (summary.winRate >= 60) return 'GOOD';
+    if (summary.winRate >= 50) return 'FAIR';
+    if (summary.winRate >= 40) return 'POOR';
     return 'NEEDS WORK';
+  }
+
+  String _formatProfitFactor(double value) {
+    if (value.isInfinite) return 'INF';
+    return value.toStringAsFixed(2);
   }
 }
 

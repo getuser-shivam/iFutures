@@ -3,13 +3,12 @@
 Last updated: 2026-03-19
 
 ## Now
-- [ ] Add a daily performance summary card (PnL, win rate, drawdown).
-
-## Next
 - [ ] Add a trade export option (CSV) for analysis.
 
-## Later
+## Next
 - [ ] Backtesting engine using historical klines.
+
+## Later
 - [ ] Strategy parameter tuning UI and presets.
 - [ ] Multi-exchange support (Binance + Coinbase).
 
@@ -18,6 +17,7 @@ Last updated: 2026-03-19
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI.
 - [x] Shared toast helper for transient in-app notifications.
 - [x] Price alerts with toast notifications and rearmable dashboard cards.
+- [x] Daily performance summary card with PnL, win rate, and drawdown.
 - [x] Paper trading with stop-loss / take-profit and realized PnL metrics.
 - [x] Manual trading controls with long/short/close actions.
 - [x] Candlestick chart (OHLC) in the dashboard.
