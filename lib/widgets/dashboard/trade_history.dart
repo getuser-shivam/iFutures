@@ -44,29 +44,76 @@ class TradeHistory extends ConsumerWidget {
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(width: 8),
-              TextButton.icon(
-                onPressed: tradeList.isEmpty || engineAsync.isLoading
-                    ? null
-                    : () async {
-                        if (engineAsync is AsyncData<TradingEngine>) {
-                          await engineAsync.value.clearTrades();
-                          if (!context.mounted) return;
-                          showAppToast(
-                            context,
-                            'Trade history cleared',
-                            backgroundColor: AppColors.warning.withOpacity(0.95),
-                            foregroundColor: Colors.white,
-                            icon: Icons.delete_outline,
-                          );
-                        }
-                      },
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.warning,
-                ),
-                icon: const Icon(Icons.delete_outline, size: 16),
-                label: const Text('CLEAR'),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  TextButton.icon(
+                    onPressed: tradeList.isEmpty
+                        ? null
+                        : () async {
+                            try {
+                              final exportService = ref.read(tradeCsvExportServiceProvider);
+                              await exportService.exportTrades(
+                                symbol: symbol,
+                                trades: tradeList,
+                              );
+                              if (!context.mounted) return;
+                              showAppToast(
+                                context,
+                                'CSV exported',
+                                backgroundColor: AppColors.glowCyan.withOpacity(0.95),
+                                foregroundColor: Colors.white,
+                                icon: Icons.download_outlined,
+                              );
+                            } catch (error) {
+                              if (!context.mounted) return;
+                              showAppToast(
+                                context,
+                                'CSV export failed: $error',
+                                backgroundColor: AppColors.negative.withOpacity(0.95),
+                                foregroundColor: Colors.white,
+                                icon: Icons.error_outline,
+                              );
+                            }
+                          },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.glowCyan,
+                    ),
+                    icon: const Icon(Icons.download_outlined, size: 16),
+                    label: const Text('EXPORT'),
+                  ),
+                  TextButton.icon(
+                    onPressed: tradeList.isEmpty || engineAsync.isLoading
+                        ? null
+                        : () async {
+                            if (engineAsync is AsyncData<TradingEngine>) {
+                              await engineAsync.value.clearTrades();
+                              if (!context.mounted) return;
+                              showAppToast(
+                                context,
+                                'Trade history cleared',
+                                backgroundColor: AppColors.warning.withOpacity(0.95),
+                                foregroundColor: Colors.white,
+                                icon: Icons.delete_outline,
+                              );
+                            }
+                          },
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.warning,
+                    ),
+                    icon: const Icon(Icons.delete_outline, size: 16),
+                    label: const Text('CLEAR'),
+                  ),
+                ],
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'CSV exports save to your Documents/iFutures/exports folder.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
           const SizedBox(height: 16),
           trades.when(

@@ -3,6 +3,7 @@ import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
 import '../services/price_alert_service.dart';
+import '../services/trade_csv_export_service.dart';
 import '../services/trade_history_service.dart';
 import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
@@ -23,6 +24,10 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 
 final tradeHistoryServiceProvider = Provider<TradeHistoryService>((ref) {
   return TradeHistoryService();
+});
+
+final tradeCsvExportServiceProvider = Provider<TradeCsvExportService>((ref) {
+  return TradeCsvExportService();
 });
 
 final priceAlertServiceProvider = Provider<PriceAlertService>((ref) {

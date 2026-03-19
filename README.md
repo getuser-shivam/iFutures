@@ -10,12 +10,12 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Application Overview
 
-iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, resilient reconnects, and automated bot control.
+iFutures is a multi-platform trading application that connects to Binance API and provides algorithmic, AI-driven, and manual trading modes. The app supports real-time market data visualization, live price monitoring, configurable symbols, persistent trade history, CSV export, resilient reconnects, and automated bot control.
 
 ### Current Features
 
 - **Real-time Candlestick Charts**: OHLC candlestick chart with live updates
-- **Strategy Modes**: ALGO, AI, and Manual trading modes
+- **Strategy Modes**: Manual-first dashboard with ALGO and AI modes available from the selector
 - **Bot Control**: Start/stop trading execution
 - **Configurable Symbols**: Manage the tradable symbol list from Settings
 - **Risk Management**: Stop loss, take profit, and trade quantity configuration
@@ -24,6 +24,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL
 - **Daily Performance Summary**: PnL, win rate, and drawdown for the current local day
 - **Trade History**: Entry/exit trades with reasons and realized PnL
+- **CSV Export**: Trade history can be exported for offline analysis
 - **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
 - **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy signal display
 - **Price Alerts**: Threshold-based one-shot alerts with toast notifications and rearm controls
@@ -32,7 +33,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 
 ### Windows Desktop Application
 ![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: App showing live price, strategy selector, controls, and trade history*
+*Current state: App showing live price, manual mode, price alerts, and trade history export*
 
 ## Development Status
 
@@ -107,6 +108,7 @@ lib/
 |  |- performance_summary_calculator.dart # Shared performance summary logic
 |  |- price_alert_service.dart   # Persistent alert storage and evaluation
 |  |- settings_service.dart     # Settings storage
+|  |- trade_csv_export_service.dart # CSV export helper for trade history
 |  |- trade_history_service.dart # Local trade history persistence
 |- trading/
 |  |- strategy.dart             # Strategy interface
