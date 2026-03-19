@@ -231,7 +231,7 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 6),
                           Text(
-                            'Manual actions are available in every mode. Auto mode uses the selected strategy; manual mode lets you execute any action.',
+                            'Manual actions stay available in every mode. If AI or the selected algorithm opens the position, you can still take over with LONG, SHORT, or CLOSE.',
                             style: const TextStyle(
                               color: AppColors.textSecondary,
                               fontSize: 12,

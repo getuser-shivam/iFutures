@@ -1,30 +1,66 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:ifutures/constants/symbols.dart';
+import 'package:ifutures/models/connection_status.dart';
+import 'package:ifutures/models/risk_settings.dart';
+import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/main.dart';
+import 'package:ifutures/providers/trading_provider.dart';
+import 'package:ifutures/screens/dashboard_screen.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const ProviderScope(child: IFuturesApp()));
+  TestWidgetsFlutterBinding.ensureInitialized();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('Bot Dashboard'), findsOneWidget);
+  setUp(() {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
+  testWidgets('iFutures boots into the dashboard shell', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          settingsInitProvider.overrideWith((ref) async {}),
+          symbolListProvider.overrideWith((ref) async => [defaultSymbol]),
+          riskSettingsProvider.overrideWith(
+            (ref) async => const RiskSettings(
+              stopLossPercent: 1.0,
+              takeProfitPercent: 2.0,
+              tradeQuantity: 0.01,
+            ),
+          ),
+          tickerStreamProvider.overrideWith((ref, symbol) async* {
+            yield {'c': '0.00335'};
+          }),
+          tradeStreamProvider.overrideWith((ref, symbol) async* {
+            yield const <Trade>[];
+          }),
+          positionStreamProvider.overrideWith((ref, symbol) async* {
+            yield null;
+          }),
+          signalStreamProvider.overrideWith((ref, symbol) async* {
+            yield null;
+          }),
+          connectionStatusProvider.overrideWith((ref, symbol) async* {
+            yield ConnectionStatus.disconnected();
+          }),
+          priceAlertsProvider.overrideWith((ref, symbol) async => const []),
+        ],
+        child: const IFuturesApp(),
+      ),
+    );
+    await tester.pump();
     await tester.pump();
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.byType(DashboardScreen), findsOneWidget);
+    expect(find.text('iFutures'), findsOneWidget);
+    expect(find.text('Price Action'), findsOneWidget);
+
+    final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
+    expect(materialApp.title, 'iFutures Bot');
+    expect(materialApp.debugShowCheckedModeBanner, isFalse);
   });
 }

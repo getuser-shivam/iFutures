@@ -3,14 +3,14 @@ import 'package:ifutures/models/price_alert.dart';
 
 void main() {
   test('price alert matches the configured direction', () {
-    const above = PriceAlert(
+    final above = PriceAlert(
       id: 'a1',
       symbol: 'GALAUSDT',
       direction: PriceAlertDirection.above,
       threshold: 0.75,
       createdAt: DateTime(2026, 1, 1),
     );
-    const below = PriceAlert(
+    final below = PriceAlert(
       id: 'b1',
       symbol: 'GALAUSDT',
       direction: PriceAlertDirection.below,
@@ -25,7 +25,7 @@ void main() {
   });
 
   test('price alert serializes and deserializes cleanly', () {
-    const original = PriceAlert(
+    final original = PriceAlert(
       id: 'alert-1',
       symbol: 'GALAUSDT',
       direction: PriceAlertDirection.below,
@@ -47,7 +47,7 @@ void main() {
   });
 
   test('price alert can trigger and rearm cleanly', () {
-    const original = PriceAlert(
+    final original = PriceAlert(
       id: 'alert-2',
       symbol: 'GALAUSDT',
       direction: PriceAlertDirection.above,
