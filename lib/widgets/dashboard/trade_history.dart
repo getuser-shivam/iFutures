@@ -6,6 +6,7 @@ import '../../models/trade.dart';
 import '../../trading/trading_engine.dart';
 import '../../theme/app_theme.dart';
 import '../common/app_panel.dart';
+import '../common/app_toast.dart';
 
 class TradeHistory extends ConsumerWidget {
   final String symbol;
@@ -50,8 +51,12 @@ class TradeHistory extends ConsumerWidget {
                         if (engineAsync is AsyncData<TradingEngine>) {
                           await engineAsync.value.clearTrades();
                           if (!context.mounted) return;
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Trade history cleared')),
+                          showAppToast(
+                            context,
+                            'Trade history cleared',
+                            backgroundColor: AppColors.warning.withOpacity(0.95),
+                            foregroundColor: Colors.white,
+                            icon: Icons.delete_outline,
                           );
                         }
                       },

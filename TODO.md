@@ -3,10 +3,9 @@
 Last updated: 2026-03-19
 
 ## Now
-- [ ] Add a lightweight price alert system with toast notifications.
+- [ ] Add a daily performance summary card (PnL, win rate, drawdown).
 
 ## Next
-- [ ] Add a daily performance summary card (PnL, win rate, drawdown).
 - [ ] Add a trade export option (CSV) for analysis.
 
 ## Later
@@ -17,6 +16,8 @@ Last updated: 2026-03-19
 ## Done
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check.
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI.
+- [x] Shared toast helper for transient in-app notifications.
+- [x] Price alerts with toast notifications and rearmable dashboard cards.
 - [x] Paper trading with stop-loss / take-profit and realized PnL metrics.
 - [x] Manual trading controls with long/short/close actions.
 - [x] Candlestick chart (OHLC) in the dashboard.

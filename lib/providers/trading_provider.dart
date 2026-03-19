@@ -2,6 +2,7 @@
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/settings_service.dart';
+import '../services/price_alert_service.dart';
 import '../services/trade_history_service.dart';
 import '../trading/trading_engine.dart';
 import '../trading/ai_strategy.dart';
@@ -13,6 +14,7 @@ import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
 import '../models/connection_status.dart';
+import '../models/price_alert.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -20,6 +22,10 @@ final settingsServiceProvider = Provider<SettingsService>((ref) {
 
 final tradeHistoryServiceProvider = Provider<TradeHistoryService>((ref) {
   return TradeHistoryService();
+});
+
+final priceAlertServiceProvider = Provider<PriceAlertService>((ref) {
+  return PriceAlertService();
 });
 
 final settingsInitProvider = FutureProvider<void>((ref) async {
@@ -166,6 +172,11 @@ final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((ref, sym
   } else {
     yield [];
   }
+});
+
+final priceAlertsProvider = FutureProvider.family<List<PriceAlert>, String>((ref, symbol) async {
+  final service = ref.watch(priceAlertServiceProvider);
+  return service.loadAlerts(symbol);
 });
 
 final positionStreamProvider = StreamProvider.family<Position?, String>((ref, symbol) async* {

@@ -10,6 +10,8 @@ import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
 import '../widgets/dashboard/open_position_card.dart';
+import '../widgets/dashboard/price_alert_listener.dart';
+import '../widgets/dashboard/price_alerts_card.dart';
 import '../widgets/dashboard/price_chart.dart';
 import '../widgets/dashboard/trade_history.dart';
 import '../widgets/dashboard/performance_metrics.dart';
@@ -103,6 +105,7 @@ class DashboardScreen extends ConsumerWidget {
         child: Stack(
           children: [
             const _DashboardBackdrop(),
+            PriceAlertListener(symbol: symbol),
             CustomScrollView(
               slivers: [
                 SliverPadding(
@@ -165,6 +168,12 @@ class DashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: RiskSummaryCard(),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: PriceAlertsCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(

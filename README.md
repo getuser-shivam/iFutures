@@ -25,6 +25,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Trade History**: Entry/exit trades with reasons and realized PnL
 - **Performance Metrics**: Win rate, total PnL, drawdown, and profit factor
 - **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy signal display
+- **Price Alerts**: Threshold-based one-shot alerts with toast notifications and rearm controls
 
 ## Screenshots
 
@@ -49,6 +50,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
+- [x] Price alerts with toast notifications and rearmable dashboard cards
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check
 
 ### Roadmap
@@ -82,6 +84,7 @@ lib/
 |- models/
 |  |- connection_status.dart    # Market connection state model
 |  |- kline.dart                # OHLCV candlestick data model
+|  |- price_alert.dart          # Price alert model and formatting helpers
 |  |- position.dart             # Open position model
 |  |- risk_settings.dart        # Risk configuration model
 |  |- trade.dart                # Trade record model
@@ -98,6 +101,7 @@ lib/
 |  |- binance_ws.dart           # Binance WebSocket connection
 |  |- reconnect_backoff.dart    # Exponential retry delay helper
 |  |- reconnecting_websocket.dart # Resilient WebSocket wrapper
+|  |- price_alert_service.dart   # Persistent alert storage and evaluation
 |  |- settings_service.dart     # Settings storage
 |  |- trade_history_service.dart # Local trade history persistence
 |- trading/
@@ -110,10 +114,13 @@ lib/
 |  |- common/
 |  |  |- action_button.dart     # Reusable dashboard button
 |  |  |- app_panel.dart         # Shared panel container
+|  |  |- app_toast.dart         # Shared floating snackbar helper
 |  |  |- status_pill.dart       # Compact status badge
 |  |- dashboard/
 |  |  |- mode_selector.dart       # Strategy mode toggle
 |  |  |- open_position_card.dart  # Open position summary
+|  |  |- price_alert_listener.dart # Dashboard alert toast listener
+|  |  |- price_alerts_card.dart   # Alert creation and management card
 |  |  |- price_chart.dart         # Candlestick chart visualization
 |  |  |- performance_metrics.dart # Realized PnL metrics
 |  |  |- trade_history.dart       # Trade history list

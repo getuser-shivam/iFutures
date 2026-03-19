@@ -4,6 +4,7 @@ import '../providers/trading_provider.dart';
 import '../constants/symbols.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_panel.dart';
+import '../widgets/common/app_toast.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -99,29 +100,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final symbols = _parseSymbolList(_symbolListController.text);
 
     if (stopLoss == null || stopLoss < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Stop loss must be a valid number (0 or greater).')),
+      showAppToast(
+        context,
+        'Stop loss must be a valid number (0 or greater).',
+        backgroundColor: AppColors.negative.withOpacity(0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
       );
       return;
     }
 
     if (takeProfit == null || takeProfit < 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Take profit must be a valid number (0 or greater).')),
+      showAppToast(
+        context,
+        'Take profit must be a valid number (0 or greater).',
+        backgroundColor: AppColors.negative.withOpacity(0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
       );
       return;
     }
 
     if (tradeQuantity == null || tradeQuantity <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Trade quantity must be greater than 0.')),
+      showAppToast(
+        context,
+        'Trade quantity must be greater than 0.',
+        backgroundColor: AppColors.negative.withOpacity(0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
       );
       return;
     }
 
     if (symbols.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Add at least one symbol (comma-separated).')),
+      showAppToast(
+        context,
+        'Add at least one symbol (comma-separated).',
+        backgroundColor: AppColors.negative.withOpacity(0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
       );
       return;
     }
@@ -136,8 +153,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await settings.setRiskTradeQuantity(tradeQuantity);
 
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Settings saved successfully')),
+      showAppToast(
+        context,
+        'Settings saved successfully',
+        backgroundColor: AppColors.positive.withOpacity(0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.check_circle_outline,
       );
       ref.invalidate(binanceApiProvider);
       ref.invalidate(binanceWsProvider);
