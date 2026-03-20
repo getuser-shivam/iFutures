@@ -2,6 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/backtest_service.dart';
+import '../services/market_analysis_service.dart';
 import '../services/settings_service.dart';
 import '../services/price_alert_service.dart';
 import '../services/trade_csv_export_service.dart';
@@ -17,6 +18,7 @@ import '../models/risk_settings.dart';
 import '../models/position.dart';
 import '../models/connection_status.dart';
 import '../models/price_alert.dart';
+import '../models/market_analysis.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -32,6 +34,10 @@ final tradeCsvExportServiceProvider = Provider<TradeCsvExportService>((ref) {
 
 final backtestServiceProvider = Provider<BacktestService>((ref) {
   return const BacktestService();
+});
+
+final marketAnalysisServiceProvider = Provider<MarketAnalysisService>((ref) {
+  return MarketAnalysisService();
 });
 
 final priceAlertServiceProvider = Provider<PriceAlertService>((ref) {
@@ -114,6 +120,13 @@ final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
     takeProfitPercent: settings.getRiskTakeProfitPercent(),
     tradeQuantity: settings.getRiskTradeQuantity(),
   );
+});
+
+final marketAnalysisProvider = FutureProvider<MarketAnalysisSnapshot>((
+  ref,
+) async {
+  final service = ref.watch(marketAnalysisServiceProvider);
+  return service.loadSnapshot();
 });
 
 final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {

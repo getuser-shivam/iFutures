@@ -52,5 +52,6 @@ debug_*.txt
 run_debug_output.txt
 pub_get_output.txt
 capture_*.ps1
+capture_*.png
 list_windows*.ps1
 /screenshot_app_v*.png

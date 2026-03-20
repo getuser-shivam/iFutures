@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.7] - 2026-03-20
+### Added
+- Market analysis dashboard card for BTC, ETH, BNB, and SOL.
+- Live CoinGecko price pulse with Google News headlines.
+- Bias note and short-watch context based on live market breadth.
+- Updated app gallery with the new market analysis screenshot.
+
 ## [1.0.6] - 2026-03-19
 ### Added
 - Strategy parameter tuning UI in Settings with RSI presets and custom threshold inputs.

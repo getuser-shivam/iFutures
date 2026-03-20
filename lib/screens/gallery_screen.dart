@@ -47,6 +47,16 @@ class GalleryScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _MilestoneCard(
+              version: '1.0.7',
+              date: '2026-03-20',
+              features: [
+                'Market analysis card for BTC, ETH, BNB, and SOL',
+                'Live crypto news pulse from BTC and ETH feeds',
+                'Dashboard market bias summary and short-watch note',
+                'Updated app gallery screenshot for the new analysis view',
+              ],
+            ),
+            _MilestoneCard(
               version: '1.0.6',
               date: '2026-03-19',
               features: [

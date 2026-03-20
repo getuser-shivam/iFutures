@@ -7,3 +7,10 @@ const List<String> defaultSymbols = [
   'BNBUSDT',
   'SOLUSDT',
 ];
+
+const List<String> marketWatchlistSymbols = [
+  'BTCUSDT',
+  'ETHUSDT',
+  'BNBUSDT',
+  'SOLUSDT',
+];

@@ -11,6 +11,7 @@ import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
+import '../widgets/dashboard/market_analysis_card.dart';
 import '../widgets/dashboard/daily_performance_card.dart';
 import '../widgets/dashboard/backtest_card.dart';
 import '../widgets/dashboard/open_position_card.dart';
@@ -114,6 +115,12 @@ class DashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: _buildHeader(context, ticker, symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: MarketAnalysisCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(

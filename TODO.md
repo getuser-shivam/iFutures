@@ -1,6 +1,6 @@
 ﻿# TODO
 
-Last updated: 2026-03-19
+Last updated: 2026-03-20
 
 ## Now
 - [ ] Multi-exchange support (Binance + Coinbase).
@@ -10,6 +10,7 @@ Last updated: 2026-03-19
 
 ## Done
 - [x] Strategy parameter tuning UI and presets.
+- [x] Market analysis card with BTC, ETH, BNB, SOL, and crypto news.
 - [x] Add a trade export option (CSV) for analysis.
 - [x] Backtesting engine using historical klines.
 - [x] GitHub Actions CI for `flutter analyze`, `flutter test`, and a Windows build smoke check.

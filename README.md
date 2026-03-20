@@ -4,7 +4,7 @@ A Flutter-based trading bot application for automated cryptocurrency trading wit
 
 ## Versioning
 
-- **Current version:** `1.0.6+7` (see `pubspec.yaml`)
+- **Current version:** `1.0.7+8` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **TODOs:** [TODO.md](TODO.md)
 
@@ -22,6 +22,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - **Risk Management**: Stop loss, take profit, and trade quantity configuration
 - **Persistent Trade History**: Entry/exit trades are saved locally and restored on startup
 - **App Gallery**: Built-in evolution gallery with the latest settings screenshot
+- **Market Analysis Card**: Live BTC/ETH/BNB/SOL pulse from CoinGecko with Google News headlines
 - **Resilient Market Stream**: WebSocket auto-reconnect with exponential backoff
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL
 - **Daily Performance Summary**: PnL, win rate, and drawdown for the current local day
@@ -35,12 +36,12 @@ iFutures is a multi-platform trading application that connects to Binance API an
 ## Screenshots
 
 ### Windows Desktop Application
-![iFutures Dashboard - GALAUSDT](screenshot_app_window.png)
-*Current state: Bot Settings showing RSI strategy tuning, symbol management, and risk controls*
+![iFutures Dashboard - Market Analysis](screenshot_app_window.png)
+*Current state: Dashboard showing market analysis, price action, and manual controls*
 
 ### App Gallery
-![iFutures App Gallery - Strategy Tuning](screenshot_app_gallery.png)
-*Current state: App Gallery highlighting the new RSI strategy tuning slide and milestone card*
+![iFutures App Gallery - Market Analysis](screenshot_app_gallery.png)
+*Current state: App Gallery highlighting the market analysis slide and milestone card*
 
 ## Development Status
 
@@ -58,6 +59,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Configurable symbol list in Settings
 - [x] RSI strategy presets and tuning controls in Settings
 - [x] App gallery refreshed with the current strategy tuning screenshot
+- [x] Market analysis card with BTC, ETH, BNB, SOL, and crypto news
 - [x] Persist trade history to disk and reload on startup
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
@@ -100,6 +102,7 @@ lib/
 |  |- kline.dart                # OHLCV candlestick data model
 |  |- performance_summary.dart  # Performance summary data model
 |  |- price_alert.dart          # Price alert model and formatting helpers
+|  |- market_analysis.dart      # Market analysis data models and formatting helpers
 |  |- position.dart             # Open position model
 |  |- risk_settings.dart        # Risk configuration model
 |  |- rsi_strategy_preset.dart  # RSI preset definitions and helpers
@@ -116,6 +119,7 @@ lib/
 |  |- binance_api.dart          # Binance REST API client
 |  |- backtest_service.dart     # Historical strategy simulation engine
 |  |- binance_ws.dart           # Binance WebSocket connection
+|  |- market_analysis_service.dart # Live BTC/ETH/BNB/SOL analysis and crypto news feed
 |  |- reconnect_backoff.dart    # Exponential retry delay helper
 |  |- reconnecting_websocket.dart # Resilient WebSocket wrapper
 |  |- performance_summary_calculator.dart # Shared performance summary logic
@@ -138,6 +142,7 @@ lib/
 |  |- dashboard/
 |  |  |- daily_performance_card.dart # Daily realized PnL summary
 |  |  |- backtest_card.dart       # Historical backtest dashboard card
+|  |  |- market_analysis_card.dart # Live BTC/ETH/BNB/SOL analysis and crypto news
 |  |  |- mode_selector.dart       # Strategy mode toggle
 |  |  |- open_position_card.dart  # Open position summary
 |  |  |- price_alert_listener.dart # Dashboard alert toast listener
