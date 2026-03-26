@@ -38,6 +38,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
     final leverage = riskSettings?.leverage ?? 1;
     final takeProfitPercent = riskSettings?.takeProfitPercent ?? 0.0;
     final stopLossPercent = riskSettings?.stopLossPercent ?? 0.0;
+    final quantity = riskSettings?.tradeQuantity;
 
     if (history.length < period + 1) {
       return StrategyTradePlan.hold(
@@ -46,6 +47,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
         leverage: leverage,
         takeProfitPercent: takeProfitPercent,
         stopLossPercent: stopLossPercent,
+        quantity: quantity,
         rationale:
             'Waiting for at least ${period + 1} candles before RSI can evaluate.',
         confidence: 0.0,
@@ -82,6 +84,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
       leverage: leverage,
       takeProfitPercent: takeProfitPercent,
       stopLossPercent: stopLossPercent,
+      quantity: quantity,
       rationale: rationale,
       generatedAt: DateTime.now(),
       confidence: confidence,

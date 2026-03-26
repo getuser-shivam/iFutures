@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/position.dart';
 import '../../models/strategy_console_entry.dart';
 import '../../providers/trading_provider.dart';
 import '../../theme/app_theme.dart';
@@ -19,14 +20,38 @@ class StrategyConsoleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final planAsync = ref.watch(decisionPlanStreamProvider(symbol));
     final logsAsync = ref.watch(consoleLogStreamProvider(symbol));
+    final positionAsync = ref.watch(positionStreamProvider(symbol));
+    final riskAsync = ref.watch(riskSettingsProvider);
+    final tickerAsync = ref.watch(tickerStreamProvider(symbol));
     final strategy = ref.watch(currentStrategyProvider);
     final isRunning = ref.watch(isBotRunningProvider(symbol));
 
     final plan = planAsync.valueOrNull;
+    final position = positionAsync.valueOrNull;
+    final risk = riskAsync.valueOrNull;
     final logs = logsAsync.maybeWhen(
       data: (entries) => entries,
       orElse: () => const <StrategyConsoleEntry>[],
     );
+    final livePrice = tickerAsync.maybeWhen(
+      data: (data) => double.tryParse(data['c']?.toString() ?? ''),
+      orElse: () => plan?.currentPrice,
+    );
+    final positionNotional = position == null
+        ? null
+        : position.entryPrice * position.quantity;
+    final positionMargin = positionNotional == null
+        ? null
+        : positionNotional /
+              ((risk?.leverage ?? plan?.leverage ?? 1).clamp(1, 125));
+    final unrealizedPnl = _computePositionPnl(position, livePrice);
+    final roePercent =
+        unrealizedPnl == null || positionMargin == null || positionMargin == 0
+        ? null
+        : (unrealizedPnl / positionMargin) * 100;
+    final positionLabel = position == null
+        ? 'NONE'
+        : '${position.isLong ? 'LONG' : 'SHORT'} ${_formatQuantity(position.quantity)}';
 
     return AppPanel(
       accent: _executionColor(strategy, isRunning),
@@ -102,9 +127,11 @@ class StrategyConsoleCard extends ConsumerWidget {
           const SizedBox(height: 16),
           LayoutBuilder(
             builder: (context, constraints) {
-              final columns = constraints.maxWidth >= 940
+              final columns = constraints.maxWidth >= 1160
                   ? 4
-                  : constraints.maxWidth >= 620
+                  : constraints.maxWidth >= 760
+                  ? 4
+                  : constraints.maxWidth >= 520
                   ? 2
                   : 1;
               final spacing = columns == 1 ? 0.0 : 12.0;
@@ -125,16 +152,10 @@ class StrategyConsoleCard extends ConsumerWidget {
                   accent: AppColors.glowCyan,
                 ),
                 _ConsoleMetric(
-                  label: 'Target Entry',
-                  value: _formatPrice(plan?.targetEntryPrice),
-                  helper: 'Planned entry',
+                  label: 'Plan Qty',
+                  value: _formatQuantity(plan?.quantity),
+                  helper: 'Configured size',
                   accent: AppColors.glowAmber,
-                ),
-                _ConsoleMetric(
-                  label: 'Live Price',
-                  value: _formatPrice(plan?.currentPrice),
-                  helper: 'Latest candle',
-                  accent: AppColors.textPrimary,
                 ),
                 _ConsoleMetric(
                   label: 'Leverage',
@@ -143,16 +164,80 @@ class StrategyConsoleCard extends ConsumerWidget {
                   accent: AppColors.glowAmber,
                 ),
                 _ConsoleMetric(
-                  label: 'Take Profit',
-                  value: _formatPercent(plan?.takeProfitPercent),
-                  helper: 'Profit target',
+                  label: 'Target Entry',
+                  value: _formatPrice(plan?.effectiveEntryPrice),
+                  helper: 'Planned entry',
+                  accent: AppColors.textPrimary,
+                ),
+                _ConsoleMetric(
+                  label: 'Planned Exposure',
+                  value: _formatUsdt(plan?.plannedNotional),
+                  helper: 'Qty x entry',
+                  accent: AppColors.textPrimary,
+                ),
+                _ConsoleMetric(
+                  label: 'Est. Margin',
+                  value: _formatUsdt(plan?.estimatedMarginRequired),
+                  helper: 'Exposure / leverage',
+                  accent: AppColors.glowCyan,
+                ),
+                _ConsoleMetric(
+                  label: 'Target PnL',
+                  value: _formatSignedUsdt(plan?.projectedProfitAtTarget),
+                  helper: plan?.takeProfitPrice == null
+                      ? 'Take profit off'
+                      : 'TP @ ${_formatPrice(plan?.takeProfitPrice)}',
                   accent: AppColors.positive,
                 ),
                 _ConsoleMetric(
-                  label: 'Stop Loss',
-                  value: _formatPercent(plan?.stopLossPercent),
-                  helper: 'Loss limit',
+                  label: 'Max Loss',
+                  value: plan?.projectedLossAtStop == null
+                      ? '--'
+                      : '-${_formatUsdt(plan?.projectedLossAtStop)}',
+                  helper: plan?.stopLossPrice == null
+                      ? 'Stop loss off'
+                      : 'SL @ ${_formatPrice(plan?.stopLossPrice)}',
                   accent: AppColors.negative,
+                ),
+                _ConsoleMetric(
+                  label: 'Current Position',
+                  value: positionLabel,
+                  helper: position == null ? 'No live exposure' : 'Open size',
+                  accent: position == null
+                      ? AppColors.textSecondary
+                      : (position.isLong
+                            ? AppColors.positive
+                            : AppColors.negative),
+                ),
+                _ConsoleMetric(
+                  label: 'Position Exposure',
+                  value: _formatUsdt(positionNotional),
+                  helper: position == null ? 'Entry x qty' : 'At entry price',
+                  accent: AppColors.glowAmber,
+                ),
+                _ConsoleMetric(
+                  label: 'Unrealized PnL',
+                  value: _formatSignedUsdt(unrealizedPnl),
+                  helper: roePercent == null
+                      ? 'Waiting for price move'
+                      : 'ROE ${roePercent.toStringAsFixed(2)}%',
+                  accent: unrealizedPnl == null
+                      ? AppColors.textSecondary
+                      : (unrealizedPnl >= 0
+                            ? AppColors.positive
+                            : AppColors.negative),
+                ),
+                _ConsoleMetric(
+                  label: 'Est. Position Margin',
+                  value: _formatUsdt(positionMargin),
+                  helper: 'Approximate live margin',
+                  accent: AppColors.glowAmber,
+                ),
+                _ConsoleMetric(
+                  label: 'Live Price',
+                  value: _formatPrice(livePrice),
+                  helper: 'Latest candle',
+                  accent: AppColors.textPrimary,
                 ),
                 _ConsoleMetric(
                   label: 'Updated',
@@ -324,11 +409,49 @@ class StrategyConsoleCard extends ConsumerWidget {
     return value.toStringAsFixed(value >= 100 ? 2 : 6);
   }
 
-  static String _formatPercent(double? value) {
+  static String _formatQuantity(double? value) {
     if (value == null || value <= 0) {
-      return 'OFF';
+      return '--';
     }
-    return '${value.toStringAsFixed(2)}%';
+    final digits = value >= 1000
+        ? 2
+        : value >= 1
+        ? 4
+        : 6;
+    return value.toStringAsFixed(digits);
+  }
+
+  static String _formatUsdt(double? value) {
+    if (value == null || value <= 0) {
+      return '--';
+    }
+    final digits = value >= 100
+        ? 2
+        : value >= 1
+        ? 3
+        : 6;
+    return '${value.toStringAsFixed(digits)} USDT';
+  }
+
+  static String _formatSignedUsdt(double? value) {
+    if (value == null) {
+      return '--';
+    }
+    if (value == 0) {
+      return '0.00 USDT';
+    }
+    final prefix = value > 0 ? '+' : '-';
+    return '$prefix${_formatUsdt(value.abs())}';
+  }
+
+  static double? _computePositionPnl(Position? position, double? livePrice) {
+    if (position == null || livePrice == null) {
+      return null;
+    }
+
+    return position.isLong
+        ? (livePrice - position.entryPrice) * position.quantity
+        : (position.entryPrice - livePrice) * position.quantity;
   }
 }
 

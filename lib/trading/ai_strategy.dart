@@ -57,6 +57,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     final resolvedTakeProfit =
         riskSettings?.takeProfitPercent ?? takeProfitPercent;
     final resolvedStopLoss = riskSettings?.stopLossPercent ?? stopLossPercent;
+    final resolvedQuantity = riskSettings?.tradeQuantity;
 
     if (history.isEmpty) {
       return StrategyTradePlan.hold(
@@ -65,6 +66,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         leverage: resolvedLeverage,
         takeProfitPercent: resolvedTakeProfit,
         stopLossPercent: resolvedStopLoss,
+        quantity: resolvedQuantity,
         rationale: 'AI mode is waiting for live candles before it can plan.',
         confidence: 0.0,
         longBiasPrice: longBiasPrice,
@@ -139,6 +141,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         leverage: planLeverage,
         takeProfitPercent: planTakeProfit,
         stopLossPercent: planStopLoss,
+        quantity: resolvedQuantity,
         rationale: rationale,
         generatedAt: DateTime.now(),
         confidence: confidence,
@@ -157,6 +160,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         leverage: resolvedLeverage,
         takeProfitPercent: resolvedTakeProfit,
         stopLossPercent: resolvedStopLoss,
+        quantity: resolvedQuantity,
         rationale: 'AI planning failed: $details',
         confidence: 0.0,
         longBiasPrice: longBiasPrice,

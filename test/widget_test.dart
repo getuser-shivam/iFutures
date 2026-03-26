@@ -7,6 +7,7 @@ import 'package:ifutures/constants/symbols.dart';
 import 'package:ifutures/models/connection_status.dart';
 import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
+import 'package:ifutures/models/position.dart';
 import 'package:ifutures/models/risk_settings.dart';
 import 'package:ifutures/models/strategy_console_entry.dart';
 import 'package:ifutures/models/trade.dart';
@@ -44,7 +45,13 @@ void main() {
             yield const <Trade>[];
           }),
           positionStreamProvider.overrideWith((ref, symbol) async* {
-            yield null;
+            yield Position(
+              symbol: symbol,
+              side: PositionSide.short,
+              entryPrice: 0.00348,
+              quantity: 1200,
+              entryTime: DateTime(2026, 3, 20, 11, 55),
+            );
           }),
           pendingManualOrderStreamProvider.overrideWith((ref, symbol) async* {
             yield const <PendingManualOrder>[];
@@ -62,6 +69,7 @@ void main() {
               leverage: 20,
               takeProfitPercent: 35,
               stopLossPercent: 20,
+              quantity: 1200,
               rationale:
                   'AI sees price near the configured short zone and prefers passive post-only execution until momentum confirms.',
               generatedAt: DateTime(2026, 3, 20, 12, 5),
@@ -177,6 +185,8 @@ void main() {
 
     expect(find.text('Strategy Terminal'), findsOneWidget);
     expect(find.text('SHORT | Post Only'), findsOneWidget);
+    expect(find.text('Planned Exposure'), findsOneWidget);
+    expect(find.text('Current Position'), findsWidgets);
     expect(find.text('Terminal Output'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Manual Order Ticket'),

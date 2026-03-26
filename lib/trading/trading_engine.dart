@@ -971,14 +971,31 @@ class TradingEngine {
         : plan.targetEntryPrice!.toStringAsFixed(
             plan.targetEntryPrice! >= 100 ? 2 : 6,
           );
-    final riskLabel =
-        'TP ${plan.takeProfitPercent.toStringAsFixed(2)}% | '
-        'SL ${plan.stopLossPercent.toStringAsFixed(2)}% | '
-        '${plan.leverage}x';
+    final sizeBits = <String>[
+      if (plan.quantity != null) 'Qty ${_formatQuantity(plan.quantity!)}',
+      if (plan.plannedNotional != null)
+        'Exposure ${_formatUsdt(plan.plannedNotional!)}',
+      if (plan.estimatedMarginRequired != null)
+        'Margin ${_formatUsdt(plan.estimatedMarginRequired!)}',
+    ];
+    final riskBits = <String>[
+      if (plan.takeProfitPercent > 0)
+        'TP ${plan.takeProfitPercent.toStringAsFixed(2)}%'
+            '${plan.projectedProfitAtTarget == null ? '' : ' (${_formatUsdt(plan.projectedProfitAtTarget!)})'}',
+      if (plan.stopLossPercent > 0)
+        'SL ${plan.stopLossPercent.toStringAsFixed(2)}%'
+            '${plan.projectedLossAtStop == null ? '' : ' (${_formatUsdt(plan.projectedLossAtStop!)})'}',
+      '${plan.leverage}x',
+    ];
+    final segments = <String>[
+      '${plan.strategyName}: ${plan.summaryLabel} at $target.',
+      if (sizeBits.isNotEmpty) '${sizeBits.join(' | ')}.',
+      '${riskBits.join(' | ')}.',
+      plan.rationale,
+    ];
 
     _logConsole(
-      '${plan.strategyName}: ${plan.summaryLabel} at $target. '
-      '$riskLabel. ${plan.rationale}',
+      segments.join(' '),
       level: switch (plan.signal) {
         TradingSignal.buy => StrategyConsoleLevel.success,
         TradingSignal.sell => StrategyConsoleLevel.warning,
@@ -1009,5 +1026,23 @@ class TradingEngine {
     if (!_consoleLogController.isClosed) {
       _consoleLogController.add(List.unmodifiable(_consoleEntries));
     }
+  }
+
+  static String _formatUsdt(double value) {
+    final digits = value >= 100
+        ? 2
+        : value >= 1
+        ? 3
+        : 6;
+    return '${value.toStringAsFixed(digits)} USDT';
+  }
+
+  static String _formatQuantity(double value) {
+    final digits = value >= 1000
+        ? 2
+        : value >= 1
+        ? 4
+        : 6;
+    return value.toStringAsFixed(digits);
   }
 }

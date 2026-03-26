@@ -637,7 +637,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           _SettingsSection(
             title: 'Risk Management',
-            subtitle: 'Percent-based stops and fixed position sizing.',
+            subtitle:
+                'Percent-based stops and fixed position sizing. The dashboard converts this quantity into estimated USDT exposure and margin.',
             child: Column(
               children: [
                 TextField(
@@ -664,7 +665,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     decimal: true,
                   ),
                   decoration: const InputDecoration(
-                    labelText: 'Trade Quantity',
+                    labelText: 'Trade Quantity (base units)',
                   ),
                 ),
                 const SizedBox(height: 16),

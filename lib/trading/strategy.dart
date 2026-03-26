@@ -15,6 +15,7 @@ class StrategyTradePlan {
   final double stopLossPercent;
   final String rationale;
   final DateTime generatedAt;
+  final double? quantity;
   final double? confidence;
   final double? longBiasPrice;
   final double? shortBiasPrice;
@@ -28,6 +29,7 @@ class StrategyTradePlan {
     required this.stopLossPercent,
     required this.rationale,
     required this.generatedAt,
+    this.quantity,
     this.orderType,
     this.targetEntryPrice,
     this.confidence,
@@ -42,6 +44,7 @@ class StrategyTradePlan {
     required double takeProfitPercent,
     required double stopLossPercent,
     required String rationale,
+    double? quantity,
     double? confidence,
     double? longBiasPrice,
     double? shortBiasPrice,
@@ -55,6 +58,7 @@ class StrategyTradePlan {
       stopLossPercent: stopLossPercent,
       rationale: rationale,
       generatedAt: DateTime.now(),
+      quantity: quantity,
       confidence: confidence,
       longBiasPrice: longBiasPrice,
       shortBiasPrice: shortBiasPrice,
@@ -72,6 +76,52 @@ class StrategyTradePlan {
   String get orderTypeLabel => orderType?.label ?? 'Watch';
 
   String get summaryLabel => '$actionLabel | $orderTypeLabel';
+
+  double get effectiveEntryPrice => targetEntryPrice ?? currentPrice;
+
+  double? get plannedNotional =>
+      quantity == null ? null : effectiveEntryPrice * quantity!;
+
+  double? get estimatedMarginRequired =>
+      plannedNotional == null || leverage <= 0
+      ? null
+      : plannedNotional! / leverage;
+
+  double? get takeProfitPrice {
+    if (!isActionable || takeProfitPercent <= 0) {
+      return null;
+    }
+
+    return switch (signal) {
+      TradingSignal.buy =>
+        effectiveEntryPrice * (1 + (takeProfitPercent / 100)),
+      TradingSignal.sell =>
+        effectiveEntryPrice * (1 - (takeProfitPercent / 100)),
+      TradingSignal.hold => null,
+    };
+  }
+
+  double? get stopLossPrice {
+    if (!isActionable || stopLossPercent <= 0) {
+      return null;
+    }
+
+    return switch (signal) {
+      TradingSignal.buy => effectiveEntryPrice * (1 - (stopLossPercent / 100)),
+      TradingSignal.sell => effectiveEntryPrice * (1 + (stopLossPercent / 100)),
+      TradingSignal.hold => null,
+    };
+  }
+
+  double? get projectedProfitAtTarget =>
+      plannedNotional == null || takeProfitPercent <= 0
+      ? null
+      : plannedNotional! * (takeProfitPercent / 100);
+
+  double? get projectedLossAtStop =>
+      plannedNotional == null || stopLossPercent <= 0
+      ? null
+      : plannedNotional! * (stopLossPercent / 100);
 }
 
 abstract class TradePlanningStrategy {
