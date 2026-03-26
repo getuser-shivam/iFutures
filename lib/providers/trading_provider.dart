@@ -8,6 +8,7 @@ import '../services/price_alert_service.dart';
 import '../services/trade_csv_export_service.dart';
 import '../services/trade_history_service.dart';
 import '../trading/trading_engine.dart';
+import '../trading/algo_strategy.dart';
 import '../trading/ai_strategy.dart';
 import '../trading/manual_strategy.dart';
 import '../trading/strategy.dart';
@@ -21,6 +22,8 @@ import '../models/position.dart';
 import '../models/connection_status.dart';
 import '../models/price_alert.dart';
 import '../models/market_analysis.dart';
+import '../models/strategy_console_entry.dart';
+import '../models/strategy_mode.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -105,6 +108,59 @@ final aiStrategyProvider = FutureProvider.family<AiStrategy, String>((
   );
 });
 
+class CurrentStrategyNotifier extends StateNotifier<TradingStrategy?> {
+  final Ref _ref;
+  final SettingsService _settings;
+
+  CurrentStrategyNotifier(this._ref, this._settings) : super(ManualStrategy()) {
+    _load();
+  }
+
+  Future<void> _load() async {
+    await _settings.init();
+    final symbol = _settings.getLastSelectedSymbol() ?? defaultSymbol;
+    await setMode(
+      _settings.getLastStrategyMode(),
+      symbol: symbol,
+      persist: false,
+    );
+  }
+
+  Future<void> setMode(
+    StrategyMode mode, {
+    String? symbol,
+    bool persist = true,
+  }) async {
+    await _settings.init();
+    final String activeSymbol = symbol ?? _ref.read(selectedSymbolProvider);
+    final TradingStrategy nextStrategy = switch (mode) {
+      StrategyMode.manual => ManualStrategy(),
+      StrategyMode.algo => RsiStrategy(
+        period: _settings.getRsiPeriod(),
+        overbought: _settings.getRsiOverbought(),
+        oversold: _settings.getRsiOversold(),
+      ),
+      StrategyMode.ai => await _ref.read(
+        aiStrategyProvider(activeSymbol).future,
+      ),
+    };
+
+    state = nextStrategy;
+    if (persist) {
+      await _settings.setLastStrategyMode(mode);
+    }
+  }
+
+  Future<void> refreshFromSettings({String? symbol}) async {
+    final mode = switch (state) {
+      AiStrategy() => StrategyMode.ai,
+      RsiStrategy() => StrategyMode.algo,
+      _ => StrategyMode.manual,
+    };
+    await setMode(mode, symbol: symbol, persist: false);
+  }
+}
+
 class SelectedSymbolNotifier extends StateNotifier<String> {
   final SettingsService _settings;
 
@@ -162,8 +218,19 @@ final marketAnalysisProvider = FutureProvider<MarketAnalysisSnapshot>((
   return service.loadSnapshot();
 });
 
-final currentStrategyProvider = StateProvider<TradingStrategy?>((ref) {
-  return ManualStrategy();
+final currentStrategyProvider =
+    StateNotifierProvider<CurrentStrategyNotifier, TradingStrategy?>((ref) {
+      final settings = ref.watch(settingsServiceProvider);
+      return CurrentStrategyNotifier(ref, settings);
+    });
+
+final currentStrategyModeProvider = Provider<StrategyMode>((ref) {
+  final strategy = ref.watch(currentStrategyProvider);
+  return switch (strategy) {
+    AiStrategy() => StrategyMode.ai,
+    RsiStrategy() => StrategyMode.algo,
+    _ => StrategyMode.manual,
+  };
 });
 
 final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((
@@ -316,6 +383,25 @@ final decisionPlanStreamProvider =
         yield* engine.decisionPlanStream;
       } else {
         yield null;
+      }
+    });
+
+final consoleLogStreamProvider =
+    StreamProvider.family<List<StrategyConsoleEntry>, String>((
+      ref,
+      symbol,
+    ) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        yield engine.consoleEntries;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.consoleLogStream;
+      } else {
+        yield const <StrategyConsoleEntry>[];
       }
     });
 

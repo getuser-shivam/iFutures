@@ -16,7 +16,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 
 - **Real-time Candlestick Charts**: OHLC candlestick chart with live updates
 - **Strategy Modes**: Manual-first dashboard with ALGO and AI modes available from the selector
-- **Strategy Console**: AI and ALGO publish the latest side, chosen order type, leverage, and rationale before execution
+- **Strategy Terminal**: AI and ALGO publish the latest side, chosen order type, leverage, rationale, and rolling activity log before execution
 - **Bot Control**: Start/stop trading execution
 - **Configurable Symbols**: Manage the tradable symbol list from Settings
 - **RSI Strategy Presets**: Tune the algorithm with saved RSI period and threshold presets
@@ -64,7 +64,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Persist trade history to disk and reload on startup
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
-- [x] Strategy console with chosen order type, leverage, and rationale for AI/ALGO plans
+- [x] Strategy terminal with chosen order type, leverage, rationale, refresh action, and rolling activity log for AI/ALGO plans
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
 - [x] Price alerts with toast notifications and rearmable dashboard cards
 - [x] Daily performance summary card with PnL, win rate, and drawdown

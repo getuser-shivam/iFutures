@@ -147,14 +147,17 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       );
     } catch (e) {
       print('AI evaluation error: $e');
+      final details = switch (e) {
+        DioException() => e.response?.data?.toString() ?? e.message ?? '$e',
+        _ => '$e',
+      };
       return StrategyTradePlan.hold(
         strategyName: name,
         currentPrice: currentPrice,
         leverage: resolvedLeverage,
         takeProfitPercent: resolvedTakeProfit,
         stopLossPercent: resolvedStopLoss,
-        rationale:
-            'AI planning failed, so the strategy is waiting. Check the AI provider settings or imported key.',
+        rationale: 'AI planning failed: $details',
         confidence: 0.0,
         longBiasPrice: longBiasPrice,
         shortBiasPrice: shortBiasPrice,
@@ -209,7 +212,6 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
           {'role': 'user', 'content': prompt},
         ],
         'temperature': 0.2,
-        'jsonMode': false,
       },
       options: Options(headers: headers),
     );

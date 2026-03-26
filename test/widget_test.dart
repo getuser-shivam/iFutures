@@ -8,6 +8,7 @@ import 'package:ifutures/models/connection_status.dart';
 import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
 import 'package:ifutures/models/risk_settings.dart';
+import 'package:ifutures/models/strategy_console_entry.dart';
 import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/main.dart';
 import 'package:ifutures/providers/trading_provider.dart';
@@ -68,6 +69,21 @@ void main() {
               longBiasPrice: 0.003,
               shortBiasPrice: 0.0035,
             );
+          }),
+          consoleLogStreamProvider.overrideWith((ref, symbol) async* {
+            yield [
+              StrategyConsoleEntry(
+                timestamp: DateTime(2026, 3, 20, 12, 4),
+                level: StrategyConsoleLevel.info,
+                message: 'Loaded 100 historical candles for TRIAUSDT.',
+              ),
+              StrategyConsoleEntry(
+                timestamp: DateTime(2026, 3, 20, 12, 5),
+                level: StrategyConsoleLevel.warning,
+                message:
+                    'AI Analyst: SHORT | Post Only at 0.003500. TP 35.00% | SL 20.00% | 20x.',
+              ),
+            ];
           }),
           connectionStatusProvider.overrideWith((ref, symbol) async* {
             yield ConnectionStatus.disconnected();
@@ -159,9 +175,9 @@ void main() {
     expect(materialApp.title, 'iFutures Bot');
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
-    expect(find.text('Strategy Console'), findsOneWidget);
+    expect(find.text('Strategy Terminal'), findsOneWidget);
     expect(find.text('SHORT | Post Only'), findsOneWidget);
-    expect(find.text('Console Output'), findsOneWidget);
+    expect(find.text('Terminal Output'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('Manual Order Ticket'),
       300,

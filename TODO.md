@@ -10,6 +10,7 @@ Last updated: 2026-03-26
 
 ## Done
 - [x] Strategy console for AI/ALGO decisions with auto-selected order types.
+- [x] Strategy terminal with persistent AI mode and live activity logs.
 - [x] Strategy parameter tuning UI and presets.
 - [x] Market analysis card with BTC, ETH, BNB, SOL, and crypto news.
 - [x] Add a trade export option (CSV) for analysis.

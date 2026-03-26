@@ -5,6 +5,7 @@ import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
 import '../models/connection_status.dart';
+import '../models/strategy_console_entry.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/trade_history_service.dart';
@@ -21,6 +22,7 @@ class TradingEngine {
   List<Kline> _klines = [];
   List<Trade> _trades = [];
   List<PendingManualOrder> _pendingManualOrders = [];
+  List<StrategyConsoleEntry> _consoleEntries = [];
   bool _isAutoTradingEnabled = false;
   bool _isStreaming = false;
   bool _hasLoadedTrades = false;
@@ -33,6 +35,7 @@ class TradingEngine {
   int? _lastLatencyMs;
   TradingSignal? _lastSignal;
   StrategyTradePlan? _lastDecisionPlan;
+  String? _lastLoggedPlanFingerprint;
 
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
@@ -41,6 +44,8 @@ class TradingEngine {
   final _signalController = StreamController<TradingSignal?>.broadcast();
   final _decisionPlanController =
       StreamController<StrategyTradePlan?>.broadcast();
+  final _consoleLogController =
+      StreamController<List<StrategyConsoleEntry>>.broadcast();
   final _pendingOrderController =
       StreamController<List<PendingManualOrder>>.broadcast();
 
@@ -51,6 +56,8 @@ class TradingEngine {
   Stream<TradingSignal?> get signalStream => _signalController.stream;
   Stream<StrategyTradePlan?> get decisionPlanStream =>
       _decisionPlanController.stream;
+  Stream<List<StrategyConsoleEntry>> get consoleLogStream =>
+      _consoleLogController.stream;
   Stream<List<PendingManualOrder>> get pendingOrderStream =>
       _pendingOrderController.stream;
 
@@ -71,16 +78,20 @@ class TradingEngine {
   List<Trade> get trades => _trades;
   List<PendingManualOrder> get pendingManualOrders =>
       List.unmodifiable(_pendingManualOrders);
+  List<StrategyConsoleEntry> get consoleEntries =>
+      List.unmodifiable(_consoleEntries);
   TradingSignal? get lastSignal => _lastSignal;
   StrategyTradePlan? get lastDecisionPlan => _lastDecisionPlan;
 
   Future<void> startMarketData() async {
     if (_isStreaming) return;
     _isStreaming = true;
+    _logConsole('Starting market stream for $symbol using ${strategy.name}.');
     _positionController.add(_openPosition);
     _connectionController.add(ConnectionStatus.connecting());
     _signalController.add(_lastSignal);
     _decisionPlanController.add(_lastDecisionPlan);
+    _consoleLogController.add(consoleEntries);
     _emitPendingOrders();
     _startConnectionTicker();
     await _loadPersistedTrades();
@@ -93,10 +104,15 @@ class TradingEngine {
       );
       _klines = historicalData.map((e) => Kline.fromJson(e)).toList();
       _klineController.add(_klines);
+      _logConsole('Loaded ${_klines.length} historical candles for $symbol.');
       if (_klines.isNotEmpty) {
         await _evaluateStrategy();
       }
     } catch (e) {
+      _logConsole(
+        'Historical candles failed to load: $e',
+        level: StrategyConsoleLevel.error,
+      );
       print('Failed to fetch historical data: $e');
     }
 
@@ -120,6 +136,10 @@ class TradingEngine {
             }
           },
           onError: (e) {
+            _logConsole(
+              'WebSocket error: $e',
+              level: StrategyConsoleLevel.error,
+            );
             print('WS subscription error: $e');
             _isStreaming = false;
             _emitConnectionStatus(forceDisconnected: true);
@@ -134,6 +154,7 @@ class TradingEngine {
   Future<void> enableTrading() async {
     _isAutoTradingEnabled = true;
     _manualOverrideActive = false;
+    _logConsole('Auto execution armed for ${strategy.name}.');
     if (!_isStreaming) {
       await startMarketData();
     }
@@ -142,6 +163,10 @@ class TradingEngine {
   void disableTrading({String reason = 'manual_stop'}) {
     _isAutoTradingEnabled = false;
     _manualOverrideActive = false;
+    _logConsole(
+      'Auto execution stopped (${reason.replaceAll('_', ' ')}).',
+      level: StrategyConsoleLevel.warning,
+    );
     if (_openPosition != null && _klines.isNotEmpty) {
       _closePosition(_klines.last.close, reason);
     }
@@ -163,31 +188,46 @@ class TradingEngine {
   }
 
   Future<void> _evaluateStrategy() async {
-    StrategyTradePlan? plan;
-    final strategyCandidate = strategy;
-    late final TradingSignal signal;
-    if (strategyCandidate case final TradePlanningStrategy planningStrategy) {
-      plan = await planningStrategy.buildTradePlan(
-        _klines,
-        symbol: symbol,
-        riskSettings: riskSettings,
-      );
-      signal = plan.signal;
-    } else {
-      signal = await strategy.evaluate(_klines);
-    }
-    print('Strategy signal: $signal');
-    _lastSignal = signal;
-    _lastDecisionPlan = plan;
-    _signalController.add(signal);
-    _decisionPlanController.add(plan);
-    if (!_isAutoTradingEnabled) return;
+    try {
+      StrategyTradePlan? plan;
+      final strategyCandidate = strategy;
+      late final TradingSignal signal;
+      if (strategyCandidate case final TradePlanningStrategy planningStrategy) {
+        plan = await planningStrategy.buildTradePlan(
+          _klines,
+          symbol: symbol,
+          riskSettings: riskSettings,
+        );
+        signal = plan.signal;
+      } else {
+        signal = await strategy.evaluate(_klines);
+      }
+      print('Strategy signal: $signal');
+      _lastSignal = signal;
+      _lastDecisionPlan = plan;
+      _signalController.add(signal);
+      _decisionPlanController.add(plan);
+      _logPlan(plan, signal);
+      if (!_isAutoTradingEnabled) return;
 
-    if (signal == TradingSignal.buy) {
-      _handleSignal(PositionSide.long, plan: plan);
-    } else if (signal == TradingSignal.sell) {
-      _handleSignal(PositionSide.short, plan: plan);
+      if (signal == TradingSignal.buy) {
+        _handleSignal(PositionSide.long, plan: plan);
+      } else if (signal == TradingSignal.sell) {
+        _handleSignal(PositionSide.short, plan: plan);
+      }
+    } catch (e) {
+      _logConsole(
+        'Strategy evaluation failed: $e',
+        level: StrategyConsoleLevel.error,
+      );
+      print('Strategy evaluation failed: $e');
     }
+  }
+
+  Future<void> refreshStrategyPlan() async {
+    await _ensureMarketData();
+    _logConsole('Manual strategy refresh requested.');
+    await _evaluateStrategy();
   }
 
   void _handleSignal(PositionSide desiredSide, {StrategyTradePlan? plan}) {
@@ -236,6 +276,10 @@ class TradingEngine {
   void takeManualControl() {
     _isAutoTradingEnabled = false;
     _manualOverrideActive = true;
+    _logConsole(
+      'Manual override activated. Auto execution is paused.',
+      level: StrategyConsoleLevel.warning,
+    );
   }
 
   Future<ManualOrderSubmissionResult> submitManualOrder(
@@ -608,6 +652,7 @@ class TradingEngine {
     _isStreaming = false;
     _wsSubscription?.cancel();
     _wsSubscription = null;
+    _logConsole('Market stream stopped.', level: StrategyConsoleLevel.warning);
     _stopConnectionTicker();
     _emitConnectionStatus(forceDisconnected: true);
   }
@@ -624,6 +669,7 @@ class TradingEngine {
     _connectionController.close();
     _signalController.close();
     _decisionPlanController.close();
+    _consoleLogController.close();
     _pendingOrderController.close();
     stopMarketData();
   }
@@ -898,6 +944,70 @@ class TradingEngine {
       }
     } catch (e) {
       print('Failed to load trade history: $e');
+    }
+  }
+
+  void _logPlan(StrategyTradePlan? plan, TradingSignal signal) {
+    final fingerprint = plan == null
+        ? 'signal:$signal'
+        : '${plan.strategyName}|${plan.summaryLabel}|${plan.rationale}';
+    if (_lastLoggedPlanFingerprint == fingerprint) {
+      return;
+    }
+    _lastLoggedPlanFingerprint = fingerprint;
+
+    if (plan == null) {
+      _logConsole(
+        'Strategy updated signal to ${signal.name.toUpperCase()}.',
+        level: signal == TradingSignal.hold
+            ? StrategyConsoleLevel.info
+            : StrategyConsoleLevel.success,
+      );
+      return;
+    }
+
+    final target = plan.targetEntryPrice == null
+        ? '--'
+        : plan.targetEntryPrice!.toStringAsFixed(
+            plan.targetEntryPrice! >= 100 ? 2 : 6,
+          );
+    final riskLabel =
+        'TP ${plan.takeProfitPercent.toStringAsFixed(2)}% | '
+        'SL ${plan.stopLossPercent.toStringAsFixed(2)}% | '
+        '${plan.leverage}x';
+
+    _logConsole(
+      '${plan.strategyName}: ${plan.summaryLabel} at $target. '
+      '$riskLabel. ${plan.rationale}',
+      level: switch (plan.signal) {
+        TradingSignal.buy => StrategyConsoleLevel.success,
+        TradingSignal.sell => StrategyConsoleLevel.warning,
+        TradingSignal.hold => StrategyConsoleLevel.info,
+      },
+    );
+  }
+
+  void _logConsole(
+    String message, {
+    StrategyConsoleLevel level = StrategyConsoleLevel.info,
+  }) {
+    if (message.trim().isEmpty) {
+      return;
+    }
+
+    _consoleEntries = [
+      ..._consoleEntries,
+      StrategyConsoleEntry(
+        timestamp: DateTime.now(),
+        level: level,
+        message: message.trim(),
+      ),
+    ];
+    if (_consoleEntries.length > 40) {
+      _consoleEntries = _consoleEntries.sublist(_consoleEntries.length - 40);
+    }
+    if (!_consoleLogController.isClosed) {
+      _consoleLogController.add(List.unmodifiable(_consoleEntries));
     }
   }
 }

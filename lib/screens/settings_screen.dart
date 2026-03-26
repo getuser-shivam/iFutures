@@ -5,6 +5,7 @@ import '../models/ai_provider.dart';
 import '../models/manual_order.dart';
 import '../constants/symbols.dart';
 import '../models/rsi_strategy_preset.dart';
+import '../models/strategy_mode.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/app_toast.dart';
@@ -326,27 +327,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
     final currentStrategy = ref.read(currentStrategyProvider);
     if (currentStrategy is RsiStrategy) {
-      ref.read(currentStrategyProvider.notifier).state = RsiStrategy(
-        period: rsiPeriod,
-        overbought: rsiOverbought,
-        oversold: rsiOversold,
-      );
+      await ref
+          .read(currentStrategyProvider.notifier)
+          .setMode(StrategyMode.algo, symbol: ref.read(selectedSymbolProvider));
     } else if (currentStrategy is AiStrategy) {
       final symbol = ref.read(selectedSymbolProvider);
-      ref.read(currentStrategyProvider.notifier).state = AiStrategy(
-        apiUrl: _aiUrlController.text.trim(),
-        apiKey: _aiApiKeyController.text.trim(),
-        provider: _selectedAiProvider,
-        model: _aiModelController.text.trim(),
-        symbolLabel: symbol,
-        longBiasPrice: aiLongBias,
-        shortBiasPrice: aiShortBias,
-        longOrderType: _selectedAiLongOrderType,
-        shortOrderType: _selectedAiShortOrderType,
-        leverage: leverage,
-        takeProfitPercent: takeProfit,
-        stopLossPercent: stopLoss,
-      );
+      await ref
+          .read(currentStrategyProvider.notifier)
+          .setMode(StrategyMode.ai, symbol: symbol);
     }
 
     if (mounted) {

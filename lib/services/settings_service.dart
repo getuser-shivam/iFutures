@@ -5,6 +5,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../models/ai_provider.dart';
+import '../models/strategy_mode.dart';
 
 class SettingsService {
   static const _apiKey = 'binance_api_key';
@@ -26,6 +27,7 @@ class SettingsService {
   static const _rsiOverbought = 'strategy_rsi_overbought';
   static const _rsiOversold = 'strategy_rsi_oversold';
   static const _lastSelectedSymbol = 'last_selected_symbol';
+  static const _lastStrategyMode = 'last_strategy_mode';
   static const _symbolList = 'symbol_list';
   static const defaultAutomationPath = r'I:\Path\Projects\automation';
 
@@ -171,6 +173,13 @@ class SettingsService {
   Future<void> setLastSelectedSymbol(String value) async {
     await init();
     await _prefs?.setString(_lastSelectedSymbol, value);
+  }
+
+  StrategyMode getLastStrategyMode() =>
+      strategyModeFromKey(_prefs?.getString(_lastStrategyMode));
+  Future<void> setLastStrategyMode(StrategyMode value) async {
+    await init();
+    await _prefs?.setString(_lastStrategyMode, value.key);
   }
 
   // Symbol list

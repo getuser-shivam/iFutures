@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/trading_provider.dart';
 import '../../models/ai_provider.dart';
 import '../../models/rsi_strategy_preset.dart';
+import '../../models/strategy_mode.dart';
 import '../../trading/algo_strategy.dart';
 import '../../trading/ai_strategy.dart';
 import '../../trading/manual_strategy.dart';
@@ -14,6 +15,7 @@ class ModeSelector extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final currentStrategy = ref.watch(currentStrategyProvider);
+    final currentMode = ref.watch(currentStrategyModeProvider);
     final settings = ref.watch(settingsServiceProvider);
     final symbol = ref.watch(selectedSymbolProvider);
     if (currentStrategy == null) return const SizedBox.shrink();
@@ -38,13 +40,10 @@ class ModeSelector extends ConsumerWidget {
         children: [
           _buildOption(
             'ALGO',
-            currentStrategy is RsiStrategy,
-            () =>
-                ref.read(currentStrategyProvider.notifier).state = RsiStrategy(
-                  period: settings.getRsiPeriod(),
-                  overbought: settings.getRsiOverbought(),
-                  oversold: settings.getRsiOversold(),
-                ),
+            currentMode == StrategyMode.algo,
+            () => ref
+                .read(currentStrategyProvider.notifier)
+                .setMode(StrategyMode.algo, symbol: symbol),
             tooltip: currentPreset == null
                 ? 'Switch to custom RSI settings'
                 : '${currentPreset.label}: ${currentPreset.summary}',
@@ -52,22 +51,20 @@ class ModeSelector extends ConsumerWidget {
           const SizedBox(width: 6),
           _buildOption(
             'AI',
-            currentStrategy is AiStrategy,
-            () async {
-              final strategy = await ref.read(
-                aiStrategyProvider(symbol).future,
-              );
-              ref.read(currentStrategyProvider.notifier).state = strategy;
-            },
+            currentMode == StrategyMode.ai,
+            () => ref
+                .read(currentStrategyProvider.notifier)
+                .setMode(StrategyMode.ai, symbol: symbol),
             tooltip:
                 'Switch to ${aiProviderFromKey(settings.getAiProvider()).label} signal analysis',
           ),
           const SizedBox(width: 6),
           _buildOption(
             'MANUAL',
-            currentStrategy is ManualStrategy,
-            () => ref.read(currentStrategyProvider.notifier).state =
-                ManualStrategy(),
+            currentMode == StrategyMode.manual,
+            () => ref
+                .read(currentStrategyProvider.notifier)
+                .setMode(StrategyMode.manual, symbol: symbol),
             tooltip: 'Manual override mode',
           ),
         ],
