@@ -16,6 +16,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 
 - **Real-time Candlestick Charts**: OHLC candlestick chart with live updates
 - **Strategy Modes**: Manual-first dashboard with ALGO and AI modes available from the selector
+- **Strategy Console**: AI and ALGO publish the latest side, chosen order type, leverage, and rationale before execution
 - **Bot Control**: Start/stop trading execution
 - **Configurable Symbols**: Manage the tradable symbol list from Settings
 - **RSI Strategy Presets**: Tune the algorithm with saved RSI period and threshold presets
@@ -63,6 +64,7 @@ iFutures is a multi-platform trading application that connects to Binance API an
 - [x] Persist trade history to disk and reload on startup
 - [x] Clear trade history action from the dashboard
 - [x] Strategy signal indicator for AI/ALGO decisions
+- [x] Strategy console with chosen order type, leverage, and rationale for AI/ALGO plans
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
 - [x] Price alerts with toast notifications and rearmable dashboard cards
 - [x] Daily performance summary card with PnL, win rate, and drawdown
@@ -142,12 +144,13 @@ lib/
 |  |- dashboard/
 |  |  |- daily_performance_card.dart # Daily realized PnL summary
 |  |  |- backtest_card.dart       # Historical backtest dashboard card
-|  |  |- market_analysis_card.dart # Live BTC/ETH/BNB/SOL analysis and crypto news
-|  |  |- mode_selector.dart       # Strategy mode toggle
-|  |  |- open_position_card.dart  # Open position summary
-|  |  |- price_alert_listener.dart # Dashboard alert toast listener
-|  |  |- price_alerts_card.dart   # Alert creation and management card
-|  |  |- price_chart.dart         # Candlestick chart visualization
+  |  |  |- market_analysis_card.dart # Live BTC/ETH/BNB/SOL analysis and crypto news
+  |  |  |- mode_selector.dart       # Strategy mode toggle
+  |  |  |- open_position_card.dart  # Open position summary
+  |  |  |- price_alert_listener.dart # Dashboard alert toast listener
+  |  |  |- price_alerts_card.dart   # Alert creation and management card
+  |  |  |- price_chart.dart         # Candlestick chart visualization
+  |  |  |- strategy_console_card.dart # AI/ALGO decision console with order-type plan
 |  |  |- performance_metrics.dart # Realized PnL metrics
 |  |  |- trade_history.dart       # Trade history list
 |  |- gallery/

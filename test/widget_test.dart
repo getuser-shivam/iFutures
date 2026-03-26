@@ -12,6 +12,7 @@ import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/main.dart';
 import 'package:ifutures/providers/trading_provider.dart';
 import 'package:ifutures/screens/dashboard_screen.dart';
+import 'package:ifutures/trading/strategy.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +50,24 @@ void main() {
           }),
           signalStreamProvider.overrideWith((ref, symbol) async* {
             yield null;
+          }),
+          decisionPlanStreamProvider.overrideWith((ref, symbol) async* {
+            yield StrategyTradePlan(
+              strategyName: 'AI Analyst',
+              signal: TradingSignal.sell,
+              orderType: ManualOrderType.postOnly,
+              currentPrice: 0.00335,
+              targetEntryPrice: 0.0035,
+              leverage: 20,
+              takeProfitPercent: 35,
+              stopLossPercent: 20,
+              rationale:
+                  'AI sees price near the configured short zone and prefers passive post-only execution until momentum confirms.',
+              generatedAt: DateTime(2026, 3, 20, 12, 5),
+              confidence: 0.82,
+              longBiasPrice: 0.003,
+              shortBiasPrice: 0.0035,
+            );
           }),
           connectionStatusProvider.overrideWith((ref, symbol) async* {
             yield ConnectionStatus.disconnected();
@@ -140,6 +159,15 @@ void main() {
     expect(materialApp.title, 'iFutures Bot');
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
+    expect(find.text('Strategy Console'), findsOneWidget);
+    expect(find.text('SHORT | Post Only'), findsOneWidget);
+    expect(find.text('Console Output'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Manual Order Ticket'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
     expect(find.text('Manual Order Ticket'), findsOneWidget);
     expect(find.text('Open Long'), findsOneWidget);
     expect(find.text('Open Short'), findsOneWidget);

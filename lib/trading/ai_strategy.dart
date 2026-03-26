@@ -4,9 +4,10 @@ import 'package:dio/dio.dart';
 import '../models/kline.dart';
 import '../models/ai_provider.dart';
 import '../models/manual_order.dart';
+import '../models/risk_settings.dart';
 import 'strategy.dart';
 
-class AiStrategy extends TradingStrategy {
+class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
   final String apiUrl;
   final String? apiKey;
   final AiProvider provider;
@@ -41,13 +42,49 @@ class AiStrategy extends TradingStrategy {
 
   @override
   Future<TradingSignal> evaluate(List<Kline> history) async {
-    if (history.isEmpty) return TradingSignal.hold;
+    final plan = await buildTradePlan(history);
+    return plan.signal;
+  }
 
-    final prompt = _buildPrompt(history);
+  @override
+  Future<StrategyTradePlan> buildTradePlan(
+    List<Kline> history, {
+    String? symbol,
+    RiskSettings? riskSettings,
+  }) async {
+    final currentPrice = history.isEmpty ? 0.0 : history.last.close;
+    final resolvedLeverage = riskSettings?.leverage ?? leverage;
+    final resolvedTakeProfit =
+        riskSettings?.takeProfitPercent ?? takeProfitPercent;
+    final resolvedStopLoss = riskSettings?.stopLossPercent ?? stopLossPercent;
+
+    if (history.isEmpty) {
+      return StrategyTradePlan.hold(
+        strategyName: name,
+        currentPrice: currentPrice,
+        leverage: resolvedLeverage,
+        takeProfitPercent: resolvedTakeProfit,
+        stopLossPercent: resolvedStopLoss,
+        rationale: 'AI mode is waiting for live candles before it can plan.',
+        confidence: 0.0,
+        longBiasPrice: longBiasPrice,
+        shortBiasPrice: shortBiasPrice,
+      );
+    }
+
+    final prompt = _buildPrompt(
+      history,
+      symbol: symbol,
+      leverage: resolvedLeverage,
+      takeProfitPercent: resolvedTakeProfit,
+      stopLossPercent: resolvedStopLoss,
+    );
 
     try {
-      final decision = switch (provider) {
-        AiProvider.customPromptApi => await _evaluateCustomPromptApi(prompt),
+      final raw = switch (provider) {
+        AiProvider.customPromptApi => jsonEncode(
+          await _evaluateCustomPromptApi(prompt),
+        ),
         AiProvider.groqChat => await _evaluateOpenAiCompatibleChat(
           prompt,
           defaultUrl: AiProvider.groqChat.defaultUrl,
@@ -61,14 +98,71 @@ class AiStrategy extends TradingStrategy {
           requireApiKey: false,
         ),
       };
-      return _decisionToSignal(decision);
+
+      final payload = _extractJsonMap(raw);
+      final signal = _decisionToSignal(
+        (payload['decision'] ??
+                payload['signal'] ??
+                payload['action'] ??
+                payload['direction'])
+            ?.toString()
+            .toLowerCase(),
+      );
+      final orderType = signal == TradingSignal.hold
+          ? null
+          : (_parseOrderType(payload['orderType']?.toString()) ??
+                _fallbackOrderType(history, signal));
+      final targetEntryPrice =
+          _asDouble(
+            payload['targetEntryPrice'] ??
+                payload['entryPrice'] ??
+                payload['price'],
+          ) ??
+          suggestTargetEntryPrice(currentPrice, signal, orderType);
+      final planLeverage =
+          _asInt(payload['leverage'])?.clamp(1, 125) ?? resolvedLeverage;
+      final planTakeProfit =
+          _asDouble(payload['takeProfitPercent']) ?? resolvedTakeProfit;
+      final planStopLoss =
+          _asDouble(payload['stopLossPercent']) ?? resolvedStopLoss;
+      final confidence = _asDouble(payload['confidence']);
+      final rationale = payload['reason']?.toString().trim().isNotEmpty == true
+          ? payload['reason'].toString().trim()
+          : _fallbackReason(signal, orderType);
+
+      return StrategyTradePlan(
+        strategyName: name,
+        signal: signal,
+        orderType: orderType,
+        currentPrice: currentPrice,
+        targetEntryPrice: targetEntryPrice,
+        leverage: planLeverage,
+        takeProfitPercent: planTakeProfit,
+        stopLossPercent: planStopLoss,
+        rationale: rationale,
+        generatedAt: DateTime.now(),
+        confidence: confidence,
+        longBiasPrice: longBiasPrice,
+        shortBiasPrice: shortBiasPrice,
+      );
     } catch (e) {
       print('AI evaluation error: $e');
-      return TradingSignal.hold;
+      return StrategyTradePlan.hold(
+        strategyName: name,
+        currentPrice: currentPrice,
+        leverage: resolvedLeverage,
+        takeProfitPercent: resolvedTakeProfit,
+        stopLossPercent: resolvedStopLoss,
+        rationale:
+            'AI planning failed, so the strategy is waiting. Check the AI provider settings or imported key.',
+        confidence: 0.0,
+        longBiasPrice: longBiasPrice,
+        shortBiasPrice: shortBiasPrice,
+      );
     }
   }
 
-  Future<String> _evaluateCustomPromptApi(String prompt) async {
+  Future<Map<String, dynamic>> _evaluateCustomPromptApi(String prompt) async {
     final response = await _dio.post(
       apiUrl,
       data: {'prompt': prompt},
@@ -78,7 +172,12 @@ class AiStrategy extends TradingStrategy {
             : {},
       ),
     );
-    return response.data['decision']?.toString().toLowerCase() ?? 'hold';
+    if (response.data is Map<String, dynamic>) {
+      return response.data as Map<String, dynamic>;
+    }
+    return <String, dynamic>{
+      'decision': response.data?.toString().toLowerCase() ?? 'hold',
+    };
   }
 
   Future<String> _evaluateOpenAiCompatibleChat(
@@ -91,7 +190,7 @@ class AiStrategy extends TradingStrategy {
     final resolvedModel = _resolvedModel(defaultModel);
     final headers = <String, dynamic>{'Content-Type': 'application/json'};
     if (requireApiKey && (apiKey == null || apiKey!.trim().isEmpty)) {
-      return 'hold';
+      return '{"decision":"hold","reason":"API key is missing for the selected AI provider."}';
     }
     if (requireApiKey && apiKey != null && apiKey!.isNotEmpty) {
       headers['Authorization'] = 'Bearer $apiKey';
@@ -131,7 +230,8 @@ class AiStrategy extends TradingStrategy {
     } else {
       raw = response.data?.toString();
     }
-    return _extractDecision(raw ?? 'hold');
+    return raw ??
+        '{"decision":"hold","reason":"AI provider returned an empty response."}';
   }
 
   String _resolvedModel(String fallback) {
@@ -145,48 +245,52 @@ class AiStrategy extends TradingStrategy {
     return trimmed;
   }
 
-  TradingSignal _decisionToSignal(String decision) {
+  TradingSignal _decisionToSignal(String? decision) {
     if (decision == 'buy') return TradingSignal.buy;
     if (decision == 'sell') return TradingSignal.sell;
+    if (decision == 'long') return TradingSignal.buy;
+    if (decision == 'short') return TradingSignal.sell;
     return TradingSignal.hold;
   }
 
-  String _extractDecision(String raw) {
+  Map<String, dynamic> _extractJsonMap(String raw) {
     final normalized = raw.trim();
     if (normalized.isEmpty) {
-      return 'hold';
+      return const <String, dynamic>{'decision': 'hold'};
     }
 
     try {
       final start = normalized.indexOf('{');
       final end = normalized.lastIndexOf('}');
       if (start != -1 && end > start) {
-        final jsonMap = responseJson(normalized.substring(start, end + 1));
-        final decision =
-            jsonMap['decision'] ??
-            jsonMap['signal'] ??
-            jsonMap['action'] ??
-            jsonMap['direction'];
-        final parsed = decision?.toString().toLowerCase();
-        if (parsed == 'buy' || parsed == 'sell' || parsed == 'hold') {
-          return parsed!;
-        }
+        return responseJson(normalized.substring(start, end + 1));
       }
     } catch (_) {
       // Fall back to token search below.
     }
 
     final lower = normalized.toLowerCase();
-    if (lower.contains('buy')) return 'buy';
-    if (lower.contains('sell')) return 'sell';
-    return 'hold';
+    if (lower.contains('buy') || lower.contains('long')) {
+      return <String, dynamic>{'decision': 'buy', 'reason': normalized};
+    }
+    if (lower.contains('sell') || lower.contains('short')) {
+      return <String, dynamic>{'decision': 'sell', 'reason': normalized};
+    }
+    return <String, dynamic>{'decision': 'hold', 'reason': normalized};
   }
 
-  String _buildPrompt(List<Kline> history) {
+  String _buildPrompt(
+    List<Kline> history, {
+    String? symbol,
+    required int leverage,
+    required double takeProfitPercent,
+    required double stopLossPercent,
+  }) {
     final recent = history.length > 10
         ? history.sublist(history.length - 10)
         : history;
     final currentPrice = recent.last.close;
+    final targetSymbol = symbol ?? symbolLabel;
     final data = recent
         .map(
           (k) =>
@@ -201,7 +305,7 @@ class AiStrategy extends TradingStrategy {
         : 'Short bias becomes stronger at or above $shortBiasPrice using ${shortOrderType.label.toUpperCase()} entries.';
 
     return """
-Analyze the following candlestick data for $symbolLabel and provide a trading decision.
+Analyze the following candlestick data for $targetSymbol and provide a trading decision.
 Use the trader rules below before deciding.
 
 Trader rules:
@@ -225,5 +329,64 @@ $data
       return <String, dynamic>{};
     }
     return Map<String, dynamic>.from(jsonDecode(value) as Map);
+  }
+
+  ManualOrderType _fallbackOrderType(
+    List<Kline> history,
+    TradingSignal signal,
+  ) {
+    final heuristicType = selectAutoOrderType(history, signal);
+    return switch (signal) {
+      TradingSignal.buy =>
+        longBiasPrice != null ? longOrderType : heuristicType,
+      TradingSignal.sell =>
+        shortBiasPrice != null ? shortOrderType : heuristicType,
+      TradingSignal.hold => heuristicType,
+    };
+  }
+
+  String _fallbackReason(TradingSignal signal, ManualOrderType? orderType) {
+    return switch (signal) {
+      TradingSignal.buy =>
+        'AI favors a long plan near the configured support zone and prefers ${orderType?.label ?? 'watching'} execution.',
+      TradingSignal.sell =>
+        'AI favors a short plan near the configured resistance zone and prefers ${orderType?.label ?? 'watching'} execution.',
+      TradingSignal.hold =>
+        'AI sees no strong edge between the configured zones, so it prefers to wait.',
+    };
+  }
+
+  ManualOrderType? _parseOrderType(String? raw) {
+    final normalized = raw?.trim().toLowerCase();
+    return switch (normalized) {
+      'market' => ManualOrderType.market,
+      'limit' => ManualOrderType.limit,
+      'post_only' || 'post only' || 'post-only' => ManualOrderType.postOnly,
+      'scaled' || 'scale' => ManualOrderType.scaled,
+      _ => null,
+    };
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(value.toString());
+  }
+
+  int? _asInt(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value.toString());
   }
 }

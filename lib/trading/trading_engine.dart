@@ -32,12 +32,15 @@ class TradingEngine {
   DateTime? _lastMessageAt;
   int? _lastLatencyMs;
   TradingSignal? _lastSignal;
+  StrategyTradePlan? _lastDecisionPlan;
 
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
   final _positionController = StreamController<Position?>.broadcast();
   final _connectionController = StreamController<ConnectionStatus>.broadcast();
   final _signalController = StreamController<TradingSignal?>.broadcast();
+  final _decisionPlanController =
+      StreamController<StrategyTradePlan?>.broadcast();
   final _pendingOrderController =
       StreamController<List<PendingManualOrder>>.broadcast();
 
@@ -46,6 +49,8 @@ class TradingEngine {
   Stream<Position?> get positionStream => _positionController.stream;
   Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
   Stream<TradingSignal?> get signalStream => _signalController.stream;
+  Stream<StrategyTradePlan?> get decisionPlanStream =>
+      _decisionPlanController.stream;
   Stream<List<PendingManualOrder>> get pendingOrderStream =>
       _pendingOrderController.stream;
 
@@ -67,6 +72,7 @@ class TradingEngine {
   List<PendingManualOrder> get pendingManualOrders =>
       List.unmodifiable(_pendingManualOrders);
   TradingSignal? get lastSignal => _lastSignal;
+  StrategyTradePlan? get lastDecisionPlan => _lastDecisionPlan;
 
   Future<void> startMarketData() async {
     if (_isStreaming) return;
@@ -74,6 +80,7 @@ class TradingEngine {
     _positionController.add(_openPosition);
     _connectionController.add(ConnectionStatus.connecting());
     _signalController.add(_lastSignal);
+    _decisionPlanController.add(_lastDecisionPlan);
     _emitPendingOrders();
     _startConnectionTicker();
     await _loadPersistedTrades();
@@ -86,6 +93,9 @@ class TradingEngine {
       );
       _klines = historicalData.map((e) => Kline.fromJson(e)).toList();
       _klineController.add(_klines);
+      if (_klines.isNotEmpty) {
+        await _evaluateStrategy();
+      }
     } catch (e) {
       print('Failed to fetch historical data: $e');
     }
@@ -153,21 +163,35 @@ class TradingEngine {
   }
 
   Future<void> _evaluateStrategy() async {
-    final signal = await strategy.evaluate(_klines);
+    StrategyTradePlan? plan;
+    final strategyCandidate = strategy;
+    late final TradingSignal signal;
+    if (strategyCandidate case final TradePlanningStrategy planningStrategy) {
+      plan = await planningStrategy.buildTradePlan(
+        _klines,
+        symbol: symbol,
+        riskSettings: riskSettings,
+      );
+      signal = plan.signal;
+    } else {
+      signal = await strategy.evaluate(_klines);
+    }
     print('Strategy signal: $signal');
     _lastSignal = signal;
+    _lastDecisionPlan = plan;
     _signalController.add(signal);
+    _decisionPlanController.add(plan);
     if (!_isAutoTradingEnabled) return;
 
     if (signal == TradingSignal.buy) {
-      _handleSignal(PositionSide.long);
+      _handleSignal(PositionSide.long, plan: plan);
     } else if (signal == TradingSignal.sell) {
-      _handleSignal(PositionSide.short);
+      _handleSignal(PositionSide.short, plan: plan);
     }
   }
 
-  void _handleSignal(PositionSide desiredSide) {
-    _handleSignalWithReason(desiredSide, 'strategy');
+  void _handleSignal(PositionSide desiredSide, {StrategyTradePlan? plan}) {
+    _handleSignalWithReason(desiredSide, 'strategy', plan: plan);
   }
 
   Future<void> manualEnterLong() async {
@@ -375,7 +399,11 @@ class TradingEngine {
     }
   }
 
-  void _handleSignalWithReason(PositionSide desiredSide, String reason) {
+  void _handleSignalWithReason(
+    PositionSide desiredSide,
+    String reason, {
+    StrategyTradePlan? plan,
+  }) {
     if (_klines.isEmpty) {
       print('No price data available for trade execution');
       return;
@@ -398,7 +426,14 @@ class TradingEngine {
         entryTime: DateTime.now(),
       );
       _positionController.add(_openPosition);
-      _recordEntryTrade(desiredSide, currentPrice, quantity, reason);
+      _recordEntryTrade(
+        desiredSide,
+        currentPrice,
+        quantity,
+        reason,
+        orderType: plan?.orderType,
+        requestedPrice: plan?.targetEntryPrice,
+      );
       return;
     }
 
@@ -407,7 +442,12 @@ class TradingEngine {
     }
 
     final closeReason = reason == 'strategy' ? 'reversal' : reason;
-    _closePosition(currentPrice, closeReason);
+    _closePosition(
+      currentPrice,
+      closeReason,
+      orderType: plan?.orderType,
+      requestedPrice: plan?.targetEntryPrice,
+    );
     _openPosition = Position(
       symbol: symbol,
       side: desiredSide,
@@ -416,7 +456,14 @@ class TradingEngine {
       entryTime: DateTime.now(),
     );
     _positionController.add(_openPosition);
-    _recordEntryTrade(desiredSide, currentPrice, quantity, reason);
+    _recordEntryTrade(
+      desiredSide,
+      currentPrice,
+      quantity,
+      reason,
+      orderType: plan?.orderType,
+      requestedPrice: plan?.targetEntryPrice,
+    );
   }
 
   void _recordEntryTrade(
@@ -450,7 +497,12 @@ class TradingEngine {
     );
   }
 
-  void _closePosition(double price, String reason) {
+  void _closePosition(
+    double price,
+    String reason, {
+    ManualOrderType? orderType,
+    double? requestedPrice,
+  }) {
     final position = _openPosition;
     if (position == null) return;
 
@@ -459,6 +511,8 @@ class TradingEngine {
       price: price,
       quantity: position.quantity,
       reason: reason,
+      orderType: orderType,
+      requestedPrice: requestedPrice,
     );
   }
 
@@ -569,6 +623,7 @@ class TradingEngine {
     _positionController.close();
     _connectionController.close();
     _signalController.close();
+    _decisionPlanController.close();
     _pendingOrderController.close();
     stopMarketData();
   }

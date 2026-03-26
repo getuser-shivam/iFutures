@@ -303,6 +303,22 @@ final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((
   }
 });
 
+final decisionPlanStreamProvider =
+    StreamProvider.family<StrategyTradePlan?, String>((ref, symbol) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        yield engine.lastDecisionPlan;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.decisionPlanStream;
+      } else {
+        yield null;
+      }
+    });
+
 final connectionStatusProvider =
     StreamProvider.family<ConnectionStatus, String>((ref, symbol) async* {
       final engineAsync = ref.watch(tradingEngineProvider(symbol));
