@@ -52,9 +52,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final apiKey = await settings.getApiKey();
     final apiSecret = await settings.getApiSecret();
     final storedSymbols = settings.getSymbolList();
-    final symbolText = (storedSymbols == null || storedSymbols.isEmpty)
-        ? defaultSymbols.join(', ')
-        : storedSymbols.join(', ');
+    final symbolText = normalizeSymbolList(
+      storedSymbols == null || storedSymbols.isEmpty
+          ? defaultSymbols
+          : storedSymbols,
+      requiredSymbols: [triausdtSymbol],
+    ).join(', ');
 
     setState(() {
       _apiKeyController.text = apiKey ?? '';
@@ -126,17 +129,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   List<String> _parseSymbolList(String value) {
-    final parts = value.split(',');
-    final seen = <String>{};
-    final result = <String>[];
-    for (final part in parts) {
-      final symbol = part.trim().toUpperCase();
-      if (symbol.isEmpty) continue;
-      if (seen.add(symbol)) {
-        result.add(symbol);
-      }
-    }
-    return result;
+    return normalizeSymbolList(
+      value.split(','),
+      requiredSymbols: [triausdtSymbol],
+    );
   }
 
   Future<void> _saveSettings() async {
@@ -396,11 +392,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           const SizedBox(height: 16),
           _SettingsSection(
             title: 'Symbols',
-            subtitle: 'Comma-separated list of tradable symbols.',
+            subtitle:
+                'Comma-separated list of tradable symbols. TRIAUSDT is included by default.',
             child: TextField(
               controller: _symbolListController,
               decoration: const InputDecoration(
-                labelText: 'Symbols (e.g., BTCUSDT, ETHUSDT)',
+                labelText: 'Symbols (e.g., BTCUSDT, ETHUSDT, TRIAUSDT)',
               ),
             ),
           ),

@@ -13,6 +13,7 @@ import '../trading/manual_strategy.dart';
 import '../trading/strategy.dart';
 import '../constants/symbols.dart';
 import '../models/kline.dart';
+import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
@@ -85,14 +86,16 @@ class SelectedSymbolNotifier extends StateNotifier<String> {
   Future<void> _load() async {
     await _settings.init();
     final saved = _settings.getLastSelectedSymbol();
-    if (state == defaultSymbol && saved != null && saved.isNotEmpty) {
-      state = saved;
+    final normalized = saved?.trim().toUpperCase();
+    if (state == defaultSymbol && normalized != null && normalized.isNotEmpty) {
+      state = normalized;
     }
   }
 
   Future<void> setSymbol(String value) async {
-    state = value;
-    await _settings.setLastSelectedSymbol(value);
+    final normalized = value.trim().toUpperCase();
+    state = normalized;
+    await _settings.setLastSelectedSymbol(normalized);
   }
 }
 
@@ -107,7 +110,7 @@ final symbolListProvider = FutureProvider<List<String>>((ref) async {
   final settings = ref.watch(settingsServiceProvider);
   final stored = settings.getSymbolList();
   if (stored != null && stored.isNotEmpty) {
-    return stored;
+    return normalizeSymbolList(stored, requiredSymbols: [triausdtSymbol]);
   }
   return defaultSymbols;
 });
@@ -232,6 +235,25 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((
     yield null;
   }
 });
+
+final pendingManualOrderStreamProvider =
+    StreamProvider.family<List<PendingManualOrder>, String>((
+      ref,
+      symbol,
+    ) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        yield engine.pendingManualOrders;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.pendingOrderStream;
+      } else {
+        yield const <PendingManualOrder>[];
+      }
+    });
 
 final signalStreamProvider = StreamProvider.family<TradingSignal?, String>((
   ref,

@@ -2,15 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
-import '../trading/algo_strategy.dart';
-import '../trading/strategy.dart';
 import '../constants/symbols.dart';
 import '../models/connection_status.dart';
-import '../models/rsi_strategy_preset.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/mode_selector.dart';
+import '../widgets/dashboard/manual_order_ticket.dart';
 import '../widgets/dashboard/market_analysis_card.dart';
 import '../widgets/dashboard/daily_performance_card.dart';
 import '../widgets/dashboard/backtest_card.dart';
@@ -34,10 +32,8 @@ class DashboardScreen extends ConsumerWidget {
     final ticker = ref.watch(tickerStreamProvider(symbol));
     final isRunning = ref.watch(isBotRunningProvider(symbol));
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
-    final currentStrategy = ref.watch(currentStrategyProvider);
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
-    final signalAsync = ref.watch(signalStreamProvider(symbol));
     final symbolsAsync = ref.watch(symbolListProvider);
     final symbols = symbolsAsync.maybeWhen(
       data: (data) => data,
@@ -115,6 +111,12 @@ class DashboardScreen extends ConsumerWidget {
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: _buildHeader(context, ticker, symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: ManualOrderTicket(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
@@ -240,106 +242,6 @@ class DashboardScreen extends ConsumerWidget {
                         letterSpacing: 0.4,
                       ),
                       textAlign: TextAlign.center,
-                    ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: AppPanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'Manual Controls',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 16,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            'Manual actions stay available in every mode. If AI or the selected algorithm opens the position, LONG, SHORT, and CLOSE stay available so you can take over instantly.',
-                            style: const TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 12,
-                            ),
-                          ),
-                          const SizedBox(height: 12),
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: [
-                              _buildSignalPill(signalAsync),
-                              if (currentStrategy != null)
-                                StatusPill(
-                                  label:
-                                      'Source: ${_strategyLabel(currentStrategy, ref)}',
-                                  color: AppColors.glowCyan,
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: ActionButton(
-                                  label: 'LONG',
-                                  icon: Icons.arrow_upward,
-                                  color: AppColors.positive,
-                                  onPressed: engineAsync.isLoading
-                                      ? null
-                                      : () async {
-                                          if (engineAsync
-                                              is AsyncData<TradingEngine>) {
-                                            final engine = engineAsync.value;
-                                            await _ensureMarketData(engine);
-                                            await engine.manualEnterLong();
-                                          }
-                                        },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ActionButton(
-                                  label: 'SHORT',
-                                  icon: Icons.arrow_downward,
-                                  color: AppColors.negative,
-                                  onPressed: engineAsync.isLoading
-                                      ? null
-                                      : () async {
-                                          if (engineAsync
-                                              is AsyncData<TradingEngine>) {
-                                            final engine = engineAsync.value;
-                                            await _ensureMarketData(engine);
-                                            await engine.manualEnterShort();
-                                          }
-                                        },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: ActionButton(
-                                  label: 'CLOSE',
-                                  icon: Icons.close,
-                                  color: AppColors.textSecondary,
-                                  onPressed: engineAsync.isLoading
-                                      ? null
-                                      : () async {
-                                          if (engineAsync
-                                              is AsyncData<TradingEngine>) {
-                                            final engine = engineAsync.value;
-                                            await _ensureMarketData(engine);
-                                            await engine.manualClose();
-                                          }
-                                        },
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
                     ),
                   ),
                 ),
@@ -505,73 +407,6 @@ class DashboardScreen extends ConsumerWidget {
         ],
       ),
     );
-  }
-
-  Future<void> _ensureMarketData(TradingEngine engine) async {
-    if (!engine.isStreaming) {
-      await engine.startMarketData();
-    }
-  }
-
-  Widget _buildSignalPill(AsyncValue<TradingSignal?> signalAsync) {
-    return signalAsync.when(
-      data: (signal) {
-        final label = _signalLabel(signal);
-        final color = _signalColor(signal);
-        return StatusPill(label: 'Signal: $label', color: color);
-      },
-      loading: () => const StatusPill(
-        label: 'Signal: ...',
-        color: AppColors.textSecondary,
-      ),
-      error: (_, __) =>
-          const StatusPill(label: 'Signal: Error', color: AppColors.warning),
-    );
-  }
-
-  String _signalLabel(TradingSignal? signal) {
-    switch (signal) {
-      case TradingSignal.buy:
-        return 'BUY';
-      case TradingSignal.sell:
-        return 'SELL';
-      case TradingSignal.hold:
-        return 'HOLD';
-      default:
-        return '--';
-    }
-  }
-
-  String _strategyLabel(TradingStrategy? strategy, WidgetRef ref) {
-    if (strategy is RsiStrategy) {
-      final settings = ref.read(settingsServiceProvider);
-      final preset = findRsiStrategyPreset(
-        period: settings.getRsiPeriod(),
-        overbought: settings.getRsiOverbought(),
-        oversold: settings.getRsiOversold(),
-      );
-
-      if (preset != null) {
-        return '${strategy.name} (${preset.label})';
-      }
-
-      return '${strategy.name} (Custom)';
-    }
-
-    return strategy?.name ?? '--';
-  }
-
-  Color _signalColor(TradingSignal? signal) {
-    switch (signal) {
-      case TradingSignal.buy:
-        return AppColors.positive;
-      case TradingSignal.sell:
-        return AppColors.negative;
-      case TradingSignal.hold:
-        return AppColors.textSecondary;
-      default:
-        return AppColors.textMuted;
-    }
   }
 
   String _formatRetryDelay(int delayMs) {

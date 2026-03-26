@@ -10,7 +10,10 @@ class Trade {
   final String strategy; // 'ALGO' or 'AI'
   final String kind; // 'ENTRY' or 'EXIT'
   final double? realizedPnl;
-  final String? reason; // 'strategy', 'stop_loss', 'take_profit', 'manual_stop', 'reversal'
+  final String? orderType;
+  final double? requestedPrice;
+  final String?
+  reason; // 'strategy', 'stop_loss', 'take_profit', 'manual_stop', 'reversal'
 
   Trade({
     required this.symbol,
@@ -24,6 +27,8 @@ class Trade {
     required this.strategy,
     this.kind = 'ENTRY',
     this.realizedPnl,
+    this.orderType,
+    this.requestedPrice,
     this.reason,
   });
 
@@ -47,6 +52,8 @@ class Trade {
       'strategy': strategy,
       'kind': kind,
       'realizedPnl': realizedPnl,
+      'orderType': orderType,
+      'requestedPrice': requestedPrice,
       'reason': reason,
     };
   }
@@ -64,6 +71,8 @@ class Trade {
       strategy: json['strategy'],
       kind: json['kind'] ?? 'ENTRY',
       realizedPnl: json['realizedPnl'],
+      orderType: json['orderType'],
+      requestedPrice: json['requestedPrice'],
       reason: json['reason'],
     );
   }

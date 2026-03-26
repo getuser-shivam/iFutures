@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ifutures/constants/symbols.dart';
 import 'package:ifutures/models/connection_status.dart';
+import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
 import 'package:ifutures/models/risk_settings.dart';
 import 'package:ifutures/models/trade.dart';
@@ -42,6 +43,9 @@ void main() {
           }),
           positionStreamProvider.overrideWith((ref, symbol) async* {
             yield null;
+          }),
+          pendingManualOrderStreamProvider.overrideWith((ref, symbol) async* {
+            yield const <PendingManualOrder>[];
           }),
           signalStreamProvider.overrideWith((ref, symbol) async* {
             yield null;
@@ -130,22 +134,26 @@ void main() {
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.byType(DashboardScreen), findsOneWidget);
     expect(find.text('iFutures'), findsOneWidget);
-    expect(find.text('Market Analysis'), findsOneWidget);
-
-    await tester.scrollUntilVisible(
-      find.text('Manual Controls'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
     await tester.pumpAndSettle();
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
     expect(materialApp.title, 'iFutures Bot');
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
-    expect(find.text('Manual Controls'), findsOneWidget);
-    expect(find.text('LONG'), findsOneWidget);
-    expect(find.text('SHORT'), findsOneWidget);
-    expect(find.text('CLOSE'), findsOneWidget);
+    expect(find.text('Manual Order Ticket'), findsOneWidget);
+    expect(find.text('Open Long'), findsOneWidget);
+    expect(find.text('Open Short'), findsOneWidget);
+    expect(find.text('Close Long'), findsOneWidget);
+    expect(find.text('Close Short'), findsOneWidget);
+    expect(find.text('Market'), findsOneWidget);
+    expect(find.text('Limit'), findsOneWidget);
+
+    await tester.scrollUntilVisible(
+      find.text('Market Analysis'),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('Market Analysis'), findsOneWidget);
   });
 }

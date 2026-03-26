@@ -55,3 +55,5 @@ capture_*.ps1
 capture_*.png
 list_windows*.ps1
 /screenshot_app_v*.png
+flutter_sdk/
+flutter_sdk.zip

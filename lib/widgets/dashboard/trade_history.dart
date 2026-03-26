@@ -28,7 +28,11 @@ class TradeHistory extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.history, color: AppColors.textSecondary, size: 20),
+              const Icon(
+                Icons.history,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Trade History',
@@ -54,7 +58,9 @@ class TradeHistory extends ConsumerWidget {
                         ? null
                         : () async {
                             try {
-                              final exportService = ref.read(tradeCsvExportServiceProvider);
+                              final exportService = ref.read(
+                                tradeCsvExportServiceProvider,
+                              );
                               await exportService.exportTrades(
                                 symbol: symbol,
                                 trades: tradeList,
@@ -63,7 +69,9 @@ class TradeHistory extends ConsumerWidget {
                               showAppToast(
                                 context,
                                 'CSV exported',
-                                backgroundColor: AppColors.glowCyan.withOpacity(0.95),
+                                backgroundColor: AppColors.glowCyan.withOpacity(
+                                  0.95,
+                                ),
                                 foregroundColor: Colors.white,
                                 icon: Icons.download_outlined,
                               );
@@ -72,7 +80,9 @@ class TradeHistory extends ConsumerWidget {
                               showAppToast(
                                 context,
                                 'CSV export failed: $error',
-                                backgroundColor: AppColors.negative.withOpacity(0.95),
+                                backgroundColor: AppColors.negative.withOpacity(
+                                  0.95,
+                                ),
                                 foregroundColor: Colors.white,
                                 icon: Icons.error_outline,
                               );
@@ -94,7 +104,9 @@ class TradeHistory extends ConsumerWidget {
                               showAppToast(
                                 context,
                                 'Trade history cleared',
-                                backgroundColor: AppColors.warning.withOpacity(0.95),
+                                backgroundColor: AppColors.warning.withOpacity(
+                                  0.95,
+                                ),
                                 foregroundColor: Colors.white,
                                 icon: Icons.delete_outline,
                               );
@@ -134,14 +146,15 @@ class TradeHistory extends ConsumerWidget {
                 physics: const NeverScrollableScrollPhysics(),
                 separatorBuilder: (_, __) => const SizedBox(height: 10),
                 itemBuilder: (context, index) {
-                  final trade = tradeList[tradeList.length - 1 - index]; // Show newest first
+                  final trade =
+                      tradeList[tradeList.length -
+                          1 -
+                          index]; // Show newest first
                   return _buildTradeItem(trade);
                 },
               );
             },
-            loading: () => const Center(
-              child: CircularProgressIndicator(),
-            ),
+            loading: () => const Center(child: CircularProgressIndicator()),
             error: (error, stack) => Center(
               child: Text(
                 'Error loading trades: $error',
@@ -185,16 +198,16 @@ class TradeHistory extends ConsumerWidget {
                   const SizedBox(width: 4),
                   Text(
                     '${trade.side} ${trade.symbol} (${trade.kind})',
-                    style: TextStyle(
-                      color: color,
-                      fontWeight: FontWeight.w700,
-                    ),
+                    style: TextStyle(color: color, fontWeight: FontWeight.w700),
                   ),
                 ],
               ),
               Text(
                 DateFormat('HH:mm:ss').format(trade.timestamp),
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
               ),
             ],
           ),
@@ -204,7 +217,9 @@ class TradeHistory extends ConsumerWidget {
             children: [
               Text(
                 'Price: \$${trade.price.toStringAsFixed(6)}',
-                style: tabularFigures(const TextStyle(color: AppColors.textPrimary)),
+                style: tabularFigures(
+                  const TextStyle(color: AppColors.textPrimary),
+                ),
               ),
               Text(
                 'Qty: ${trade.quantity}',
@@ -217,18 +232,27 @@ class TradeHistory extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                'Strategy: ${trade.strategy}',
-                style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                'Strategy: ${trade.strategy}${trade.orderType == null ? '' : ' | ${trade.orderType}'}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: trade.status == 'simulated' ? AppColors.warning : AppColors.glowCyan,
+                  color: trade.status == 'simulated'
+                      ? AppColors.warning
+                      : AppColors.glowCyan,
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Text(
                   badgeText,
-                  style: const TextStyle(color: Colors.white, fontSize: 10, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
             ],
@@ -238,7 +262,9 @@ class TradeHistory extends ConsumerWidget {
             Text(
               'PnL: ${trade.realizedPnl!.toStringAsFixed(4)}',
               style: TextStyle(
-                color: trade.realizedPnl! >= 0 ? AppColors.positive : AppColors.negative,
+                color: trade.realizedPnl! >= 0
+                    ? AppColors.positive
+                    : AppColors.negative,
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
