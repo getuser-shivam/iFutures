@@ -13,6 +13,7 @@ import '../trading/manual_strategy.dart';
 import '../trading/strategy.dart';
 import '../constants/symbols.dart';
 import '../models/kline.dart';
+import '../models/ai_provider.dart';
 import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
@@ -70,10 +71,38 @@ final binanceWsProvider = FutureProvider<BinanceWebSocketService>((ref) async {
   return BinanceWebSocketService(isTestnet: settings.getIsTestnet());
 });
 
-final aiStrategyProvider = FutureProvider<AiStrategy>((ref) async {
+final aiStrategyProvider = FutureProvider.family<AiStrategy, String>((
+  ref,
+  symbol,
+) async {
   await ref.watch(settingsInitProvider.future);
   final settings = ref.watch(settingsServiceProvider);
-  return AiStrategy(apiUrl: settings.getAiUrl(), apiKey: 'your_ai_key');
+  var provider = aiProviderFromKey(settings.getAiProvider());
+  var aiKey = await settings.getAiApiKey();
+
+  if ((aiKey == null || aiKey.isEmpty) &&
+      provider != AiProvider.customPromptApi) {
+    await settings.importAiConfigFromAutomation();
+    provider = aiProviderFromKey(settings.getAiProvider());
+    aiKey = await settings.getAiApiKey();
+  }
+
+  return AiStrategy(
+    apiUrl: settings.getAiUrl(),
+    apiKey: aiKey,
+    provider: provider,
+    model: settings.getAiModel(),
+    symbolLabel: symbol,
+    longBiasPrice: settings.getAiLongBiasPrice(),
+    shortBiasPrice: settings.getAiShortBiasPrice(),
+    longOrderType: ManualOrderType.values.byName(settings.getAiLongOrderType()),
+    shortOrderType: ManualOrderType.values.byName(
+      settings.getAiShortOrderType(),
+    ),
+    leverage: settings.getRiskLeverage(),
+    takeProfitPercent: settings.getRiskTakeProfitPercent(),
+    stopLossPercent: settings.getRiskStopLossPercent(),
+  );
 });
 
 class SelectedSymbolNotifier extends StateNotifier<String> {
@@ -122,6 +151,7 @@ final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
     stopLossPercent: settings.getRiskStopLossPercent(),
     takeProfitPercent: settings.getRiskTakeProfitPercent(),
     tradeQuantity: settings.getRiskTradeQuantity(),
+    leverage: settings.getRiskLeverage(),
   );
 });
 

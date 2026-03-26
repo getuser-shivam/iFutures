@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/trading_provider.dart';
+import '../../models/ai_provider.dart';
 import '../../models/rsi_strategy_preset.dart';
 import '../../trading/algo_strategy.dart';
 import '../../trading/ai_strategy.dart';
@@ -14,6 +15,7 @@ class ModeSelector extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final currentStrategy = ref.watch(currentStrategyProvider);
     final settings = ref.watch(settingsServiceProvider);
+    final symbol = ref.watch(selectedSymbolProvider);
     if (currentStrategy == null) return const SizedBox.shrink();
 
     final currentPreset = currentStrategy is RsiStrategy
@@ -51,10 +53,14 @@ class ModeSelector extends ConsumerWidget {
           _buildOption(
             'AI',
             currentStrategy is AiStrategy,
-            () => ref.read(currentStrategyProvider.notifier).state = AiStrategy(
-              apiUrl: 'https://your-ai-api.com/analyze',
-            ),
-            tooltip: 'Switch to AI signal analysis',
+            () async {
+              final strategy = await ref.read(
+                aiStrategyProvider(symbol).future,
+              );
+              ref.read(currentStrategyProvider.notifier).state = strategy;
+            },
+            tooltip:
+                'Switch to ${aiProviderFromKey(settings.getAiProvider()).label} signal analysis',
           ),
           const SizedBox(width: 6),
           _buildOption(
