@@ -1,13 +1,14 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:dio/dio.dart';
+import 'package:http/http.dart' as http;
 
 class BinanceApiService {
   final String apiKey;
   final String apiSecret;
   final bool isTestnet;
 
-  late final Dio _dio;
+  late final http.Client _client;
+  int _timestampOffsetMs = 0;
 
   String get baseUrl => isTestnet
       ? 'https://testnet.binancefuture.com'
@@ -18,15 +19,7 @@ class BinanceApiService {
     required this.apiSecret,
     this.isTestnet = true,
   }) {
-    _dio = Dio(
-      BaseOptions(
-        baseUrl: baseUrl,
-        headers: {
-          'X-MBX-APIKEY': apiKey,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-      ),
-    );
+    _client = http.Client();
   }
 
   bool get hasCredentials =>
@@ -45,23 +38,79 @@ class BinanceApiService {
     String path, {
     Map<String, dynamic>? params,
     bool signed = false,
+    int retryCount = 0,
   }) async {
-    params ??= {};
+    final requestParams = <String, dynamic>{...?params};
     if (signed) {
-      params['timestamp'] = DateTime.now().millisecondsSinceEpoch;
-      final queryString = _buildQueryString(params);
-      params['signature'] = _generateSignature(queryString);
+      requestParams['timestamp'] =
+          DateTime.now().millisecondsSinceEpoch + _timestampOffsetMs;
+      requestParams['signature'] = _generateSignature(
+        _buildQueryString(requestParams),
+      );
     }
 
+    final queryString = _buildQueryString(requestParams);
+    final headers = <String, String>{
+      'X-MBX-APIKEY': apiKey,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    };
+    final upperMethod = method.toUpperCase();
+
     try {
-      final response = await _dio.request(
-        path,
-        queryParameters: params,
-        options: Options(method: method),
-      );
-      return response.data as T;
-    } on DioException catch (e) {
-      print('Dio error: ${e.response?.data ?? e.message}');
+      late final http.Response response;
+      switch (upperMethod) {
+        case 'GET':
+          final uri = Uri.parse(
+            queryString.isEmpty
+                ? '$baseUrl$path'
+                : '$baseUrl$path?$queryString',
+          );
+          response = await _client.get(uri, headers: headers);
+          break;
+        case 'POST':
+          final uri = Uri.parse('$baseUrl$path');
+          response = await _client.post(
+            uri,
+            headers: headers,
+            body: queryString,
+          );
+          break;
+        default:
+          throw UnsupportedError('Unsupported HTTP method: $method');
+      }
+
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        if (signed &&
+            retryCount == 0 &&
+            _isTimestampDriftErrorBody(response.body)) {
+          await syncServerTime();
+          return _sendRequest<T>(
+            method,
+            path,
+            params: params,
+            signed: signed,
+            retryCount: retryCount + 1,
+          );
+        }
+        print('HTTP error: ${response.body}');
+        throw BinanceApiException(response.statusCode, response.body);
+      }
+
+      return jsonDecode(response.body) as T;
+    } on BinanceApiException {
+      rethrow;
+    } catch (e) {
+      if (signed && retryCount == 0 && _isTimestampDriftErrorBody('$e')) {
+        await syncServerTime();
+        return _sendRequest<T>(
+          method,
+          path,
+          params: params,
+          signed: signed,
+          retryCount: retryCount + 1,
+        );
+      }
+      print('HTTP client error: $e');
       rethrow;
     }
   }
@@ -71,6 +120,26 @@ class BinanceApiService {
   }
 
   // --- API Methods ---
+
+  Future<int> getServerTime() async {
+    final response = await _sendRequest<Map<String, dynamic>>(
+      'GET',
+      '/fapi/v1/time',
+    );
+    final serverTime = response['serverTime'];
+    if (serverTime is int) {
+      return serverTime;
+    }
+    if (serverTime is num) {
+      return serverTime.toInt();
+    }
+    return int.parse(serverTime.toString());
+  }
+
+  Future<void> syncServerTime() async {
+    final serverTime = await getServerTime();
+    _timestampOffsetMs = serverTime - DateTime.now().millisecondsSinceEpoch;
+  }
 
   Future<Map<String, dynamic>> getAccountInfo() async {
     return _sendRequest<Map<String, dynamic>>(
@@ -197,7 +266,7 @@ class BinanceApiService {
         params: params,
         signed: true,
       );
-    } on DioException {
+    } on BinanceApiException {
       return _sendRequest<List<dynamic>>(
         'GET',
         '/fapi/v2/positionRisk',
@@ -206,4 +275,19 @@ class BinanceApiService {
       );
     }
   }
+
+  bool _isTimestampDriftErrorBody(String message) {
+    return message.contains('-1021') ||
+        message.toLowerCase().contains('timestamp for this request');
+  }
+}
+
+class BinanceApiException implements Exception {
+  final int statusCode;
+  final String body;
+
+  BinanceApiException(this.statusCode, this.body);
+
+  @override
+  String toString() => 'BinanceApiException($statusCode): $body';
 }

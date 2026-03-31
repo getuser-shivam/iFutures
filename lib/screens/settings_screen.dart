@@ -13,7 +13,6 @@ import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/backtest_card.dart';
 import '../widgets/dashboard/manual_order_ticket.dart';
 import '../widgets/dashboard/mode_selector.dart';
-import '../widgets/dashboard/strategy_console_card.dart';
 import '../trading/algo_strategy.dart';
 import '../trading/ai_strategy.dart';
 
@@ -379,7 +378,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsSection(
             title: 'Strategy Workspace',
             subtitle:
-                'Choose the active mode here. AI, ALGO, and MANUAL tools now live in Settings so the dashboard stays focused on live monitoring.',
+                'Choose the active mode here. Configuration, manual tickets, and backtesting live in Settings, while the live strategy terminal stays on the dashboard.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -427,18 +426,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: ManualOrderTicket(symbol: symbol),
           ),
           const SizedBox(height: 16),
-          if (currentMode != StrategyMode.manual) ...[
-            _WorkspaceBlock(
-              title: currentMode == StrategyMode.ai
-                  ? 'AI Workspace'
-                  : 'Algorithm Workspace',
-              subtitle: currentMode == StrategyMode.ai
-                  ? 'Review the live AI plan, rationale, and current execution posture for the selected symbol.'
-                  : 'Review the active algorithm plan, terminal output, and position context for the selected symbol.',
-              child: StrategyConsoleCard(symbol: symbol),
-            ),
-            const SizedBox(height: 16),
-          ],
           if (currentMode == StrategyMode.algo) ...[
             _WorkspaceBlock(
               title: 'Algorithm Lab',
@@ -787,11 +774,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _strategyWorkspaceDescription(StrategyMode mode) {
     return switch (mode) {
       StrategyMode.manual =>
-        'Manual mode keeps the order desk here in Settings. Use it to override AI or ALGO cleanly without crowding the dashboard.',
+        'Manual mode keeps the order desk here in Settings. Use it to override AI or ALGO cleanly while the dashboard continues to show live activity.',
       StrategyMode.algo =>
-        'ALGO mode keeps RSI tuning, backtests, and the live strategy console together here so the dashboard can stay focused on positions and market context.',
+        'ALGO mode keeps RSI tuning and backtests here, while the dashboard shows the live strategy terminal and market/account context.',
       StrategyMode.ai =>
-        'AI mode keeps provider setup, bias zones, and the live strategy console together here so it is easier to manage and audit.',
+        'AI mode keeps provider setup and bias zones here, while the dashboard shows the live strategy terminal and account activity.',
     };
   }
 }

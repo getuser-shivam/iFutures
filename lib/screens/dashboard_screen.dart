@@ -14,6 +14,7 @@ import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_alert_listener.dart';
 import '../widgets/dashboard/price_alerts_card.dart';
 import '../widgets/dashboard/price_chart.dart';
+import '../widgets/dashboard/strategy_console_card.dart';
 import '../widgets/dashboard/trade_history.dart';
 import '../widgets/dashboard/performance_metrics.dart';
 import '../widgets/dashboard/risk_summary_card.dart';
@@ -128,6 +129,12 @@ class DashboardScreen extends ConsumerWidget {
                       currentStrategy?.name,
                       symbol,
                     ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: StrategyConsoleCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
@@ -513,7 +520,7 @@ class DashboardScreen extends ConsumerWidget {
           ),
           const SizedBox(height: 8),
           const Text(
-            'AI, ALGO, and MANUAL tools have been moved into Settings so the dashboard stays focused on live price, positions, performance, and history.',
+            'Mode selection, manual tickets, and backtesting now live in Settings. The dashboard keeps the live strategy terminal visible for monitoring and troubleshooting.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -651,11 +658,11 @@ class DashboardScreen extends ConsumerWidget {
   static String _dashboardHintForMode(StrategyMode mode) {
     return switch (mode) {
       StrategyMode.manual =>
-        'Manual order controls are available from Settings > Strategy Workspace. The dashboard now stays dedicated to market and account monitoring.',
+        'Manual order controls are available from Settings > Strategy Workspace. The dashboard keeps the live terminal visible so market and account activity are easy to monitor.',
       StrategyMode.algo =>
-        'RSI tuning, backtests, and strategy output are now grouped in Settings > Strategy Workspace.',
+        'RSI tuning and backtests are grouped in Settings > Strategy Workspace, while the live terminal stays here for monitoring.',
       StrategyMode.ai =>
-        'AI provider settings, trade zones, and the live strategy terminal are now grouped in Settings > Strategy Workspace.',
+        'AI provider settings and trade zones are grouped in Settings > Strategy Workspace, while the live terminal stays here for monitoring.',
     };
   }
 }

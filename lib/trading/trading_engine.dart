@@ -867,12 +867,28 @@ class TradingEngine {
     } catch (e) {
       if (logSuccess) {
         _logConsole(
-          'Binance account sync failed, falling back to local cache: $e',
+          _friendlyExchangeSyncError(e),
           level: StrategyConsoleLevel.warning,
         );
       }
       return false;
     }
+  }
+
+  String _friendlyExchangeSyncError(Object error) {
+    if (error is BinanceApiException) {
+      if (error.body.contains('-1022')) {
+        return 'Binance account sync failed: invalid API signature. Re-enter the Binance API secret or create a fresh key pair for this app.';
+      }
+      if (error.body.contains('-1021')) {
+        return 'Binance account sync failed because this machine clock is ahead of Binance server time. The app is retrying with server time.';
+      }
+      if (error.body.contains('-2015') || error.body.contains('-2014')) {
+        return 'Binance account sync failed: API key, IP whitelist, or Futures permission was rejected by Binance.';
+      }
+    }
+
+    return 'Binance account sync failed, falling back to local cache: $error';
   }
 
   bool get _isExchangeSyncMode => apiService.hasCredentials;

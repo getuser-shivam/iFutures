@@ -185,18 +185,13 @@ void main() {
 
     expect(find.text('Strategy Workspace'), findsOneWidget);
     expect(
-      find.textContaining('AI, ALGO, and MANUAL tools have been moved'),
+      find.textContaining(
+        'Mode selection, manual tickets, and backtesting now live in Settings',
+      ),
       findsOneWidget,
     );
-    expect(find.text('Strategy Terminal'), findsNothing);
+    expect(find.text('Strategy Terminal'), findsOneWidget);
     expect(find.text('Manual Order Ticket'), findsNothing);
-
-    await tester.scrollUntilVisible(
-      find.text('Market Analysis'),
-      300,
-      scrollable: find.byType(Scrollable).first,
-    );
-    await tester.pumpAndSettle();
-    expect(find.text('Market Analysis'), findsOneWidget);
+    expect(find.text('Current Price'), findsOneWidget);
   });
 }
