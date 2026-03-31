@@ -28,6 +28,7 @@ class TradingEngine {
   bool _hasLoadedTrades = false;
   bool _manualOverrideActive = false;
   int _manualOrderSequence = 0;
+  Timer? _exchangeSyncTimer;
   Position? _openPosition;
   StreamSubscription? _wsSubscription;
   Timer? _connectionTimer;
@@ -36,6 +37,7 @@ class TradingEngine {
   TradingSignal? _lastSignal;
   StrategyTradePlan? _lastDecisionPlan;
   String? _lastLoggedPlanFingerprint;
+  String? _lastExecutionBlockFingerprint;
 
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
@@ -94,7 +96,17 @@ class TradingEngine {
     _consoleLogController.add(consoleEntries);
     _emitPendingOrders();
     _startConnectionTicker();
-    await _loadPersistedTrades();
+    if (apiService.hasCredentials) {
+      final syncedExchangeState = await _loadInitialAccountState();
+      if (!syncedExchangeState) {
+        _trades = [];
+        _openPosition = null;
+        _tradeController.add(_trades);
+        _positionController.add(_openPosition);
+      }
+    } else {
+      await _loadPersistedTrades();
+    }
 
     // 1. Fetch historical data
     try {
@@ -115,6 +127,8 @@ class TradingEngine {
       );
       print('Failed to fetch historical data: $e');
     }
+
+    _startExchangeSyncTimer();
 
     // 2. Subscribe to real-time updates
     _wsSubscription = wsService
@@ -236,6 +250,12 @@ class TradingEngine {
 
   Future<void> manualEnterLong() async {
     await _ensureMarketData();
+    if (_isExchangeSyncMode) {
+      _logExecutionBlocked(
+        'Manual long requested, but live order routing is not enabled. Binance sync is read-only right now.',
+      );
+      return;
+    }
     takeManualControl();
     _executeImmediateManualAction(
       ManualOrderAction.openLong,
@@ -248,6 +268,12 @@ class TradingEngine {
 
   Future<void> manualEnterShort() async {
     await _ensureMarketData();
+    if (_isExchangeSyncMode) {
+      _logExecutionBlocked(
+        'Manual short requested, but live order routing is not enabled. Binance sync is read-only right now.',
+      );
+      return;
+    }
     takeManualControl();
     _executeImmediateManualAction(
       ManualOrderAction.openShort,
@@ -260,6 +286,12 @@ class TradingEngine {
 
   Future<void> manualClose() async {
     await _ensureMarketData();
+    if (_isExchangeSyncMode) {
+      _logExecutionBlocked(
+        'Manual close requested, but live order routing is not enabled. Binance sync is read-only right now.',
+      );
+      return;
+    }
     takeManualControl();
     if (_openPosition == null || _klines.isEmpty) return;
     _executeImmediateManualAction(
@@ -286,6 +318,17 @@ class TradingEngine {
     ManualOrderRequest request,
   ) async {
     await _ensureMarketData();
+
+    if (_isExchangeSyncMode) {
+      _logExecutionBlocked(
+        'Manual ticket blocked in read-only Binance sync mode. No simulated trade was created.',
+      );
+      return const ManualOrderSubmissionResult(
+        accepted: false,
+        message:
+            'Binance sync mode is read-only right now. Real order routing is not enabled, so no local simulated trade was created.',
+      );
+    }
 
     if (request.quantity <= 0) {
       return const ManualOrderSubmissionResult(
@@ -448,6 +491,13 @@ class TradingEngine {
     String reason, {
     StrategyTradePlan? plan,
   }) {
+    if (_isExchangeSyncMode) {
+      _logExecutionBlocked(
+        '${strategy.name} signaled ${desiredSide == PositionSide.long ? 'LONG' : 'SHORT'}, but live order routing is not enabled. Waiting for actual Binance account changes instead of simulating a local trade.',
+      );
+      return;
+    }
+
     if (_klines.isEmpty) {
       print('No price data available for trade execution');
       return;
@@ -653,6 +703,7 @@ class TradingEngine {
     _wsSubscription?.cancel();
     _wsSubscription = null;
     _logConsole('Market stream stopped.', level: StrategyConsoleLevel.warning);
+    _stopExchangeSyncTimer();
     _stopConnectionTicker();
     _emitConnectionStatus(forceDisconnected: true);
   }
@@ -749,6 +800,89 @@ class TradingEngine {
     _trades = [];
     _tradeController.add(_trades);
     await tradeHistoryService.clearTrades(symbol);
+  }
+
+  Future<bool> _loadInitialAccountState() async {
+    if (!apiService.hasCredentials) {
+      return false;
+    }
+
+    return _syncExchangeState(logSuccess: true);
+  }
+
+  void _startExchangeSyncTimer() {
+    _exchangeSyncTimer?.cancel();
+    if (!apiService.hasCredentials) {
+      return;
+    }
+
+    _exchangeSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
+      unawaited(_syncExchangeState());
+    });
+  }
+
+  void _stopExchangeSyncTimer() {
+    _exchangeSyncTimer?.cancel();
+    _exchangeSyncTimer = null;
+  }
+
+  Future<bool> _syncExchangeState({bool logSuccess = false}) async {
+    if (!apiService.hasCredentials) {
+      return false;
+    }
+
+    try {
+      final results = await Future.wait([
+        apiService.getPositionRisk(symbol: symbol),
+        apiService.getUserTrades(symbol: symbol, limit: 100),
+      ]);
+
+      final syncedPosition = _parseExchangePosition(
+        results[0] as List<dynamic>,
+      );
+      final syncedTrades = _parseExchangeTrades(results[1] as List<dynamic>);
+
+      final positionChanged = !_samePosition(_openPosition, syncedPosition);
+      final tradesChanged = !_sameTrades(_trades, syncedTrades);
+
+      _openPosition = syncedPosition;
+      _trades = syncedTrades;
+      _lastExecutionBlockFingerprint = null;
+      _positionController.add(_openPosition);
+      _tradeController.add(_trades);
+      await tradeHistoryService.saveTrades(symbol, _trades);
+
+      if (logSuccess || positionChanged || tradesChanged) {
+        final positionLabel = _openPosition == null
+            ? 'no open position'
+            : '${_openPosition!.isLong ? 'LONG' : 'SHORT'} '
+                  '${_formatQuantity(_openPosition!.quantity)} @ '
+                  '${_openPosition!.entryPrice.toStringAsFixed(_openPosition!.entryPrice >= 100 ? 2 : 6)}';
+        _logConsole(
+          'Synced Binance account state: ${_trades.length} live fills, $positionLabel.',
+          level: StrategyConsoleLevel.success,
+        );
+      }
+      return true;
+    } catch (e) {
+      if (logSuccess) {
+        _logConsole(
+          'Binance account sync failed, falling back to local cache: $e',
+          level: StrategyConsoleLevel.warning,
+        );
+      }
+      return false;
+    }
+  }
+
+  bool get _isExchangeSyncMode => apiService.hasCredentials;
+
+  void _logExecutionBlocked(String message) {
+    if (_lastExecutionBlockFingerprint == message) {
+      return;
+    }
+    _lastExecutionBlockFingerprint = message;
+    _logConsole(message, level: StrategyConsoleLevel.warning);
   }
 
   void _executeImmediateManualAction(
@@ -947,6 +1081,129 @@ class TradingEngine {
     }
   }
 
+  Position? _parseExchangePosition(List<dynamic> payload) {
+    for (final item in payload) {
+      if (item is! Map) {
+        continue;
+      }
+
+      final symbolValue = item['symbol']?.toString().toUpperCase();
+      if (symbolValue != symbol.toUpperCase()) {
+        continue;
+      }
+
+      final amount = _asDouble(item['positionAmt']);
+      if (amount == null || amount == 0) {
+        return null;
+      }
+
+      final entryPrice = _asDouble(item['entryPrice']) ?? 0;
+      final updateTime = _asInt(item['updateTime']) ?? 0;
+      final entryTime = updateTime > 0
+          ? DateTime.fromMillisecondsSinceEpoch(updateTime)
+          : DateTime.now();
+
+      return Position(
+        symbol: symbol,
+        side: amount > 0 ? PositionSide.long : PositionSide.short,
+        entryPrice: entryPrice,
+        quantity: amount.abs(),
+        entryTime: entryTime,
+      );
+    }
+
+    return null;
+  }
+
+  List<Trade> _parseExchangeTrades(List<dynamic> payload) {
+    final trades = <Trade>[];
+
+    for (final item in payload) {
+      if (item is! Map) {
+        continue;
+      }
+
+      final symbolValue = item['symbol']?.toString().toUpperCase();
+      if (symbolValue != symbol.toUpperCase()) {
+        continue;
+      }
+
+      final price = _asDouble(item['price']);
+      final quantity = _asDouble(item['qty'] ?? item['quantity']);
+      if (price == null || quantity == null || quantity <= 0) {
+        continue;
+      }
+
+      final side = item['side']?.toString().toUpperCase() == 'SELL'
+          ? 'SELL'
+          : 'BUY';
+      final realizedPnl = _asDouble(item['realizedPnl']);
+      final timestamp = DateTime.fromMillisecondsSinceEpoch(
+        _asInt(item['time']) ?? DateTime.now().millisecondsSinceEpoch,
+      );
+      final isRealizedExit =
+          realizedPnl != null && realizedPnl.abs() > 0.0000001;
+      final maker = item['maker'] == true;
+
+      trades.add(
+        Trade(
+          symbol: symbol,
+          side: side,
+          price: price,
+          quantity: quantity,
+          timestamp: timestamp,
+          orderId: item['orderId']?.toString() ?? item['id']?.toString(),
+          status: 'filled',
+          fee: _asDouble(item['commission'])?.abs(),
+          strategy: 'Binance Live',
+          kind: isRealizedExit ? 'EXIT' : 'LIVE',
+          realizedPnl: realizedPnl,
+          orderType: maker ? 'Maker' : 'Taker',
+          requestedPrice: price,
+          reason: 'exchange_sync',
+        ),
+      );
+    }
+
+    trades.sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    return trades;
+  }
+
+  bool _samePosition(Position? a, Position? b) {
+    if (identical(a, b)) {
+      return true;
+    }
+    if (a == null || b == null) {
+      return a == b;
+    }
+
+    return a.symbol == b.symbol &&
+        a.side == b.side &&
+        (a.entryPrice - b.entryPrice).abs() < 0.0000001 &&
+        (a.quantity - b.quantity).abs() < 0.0000001;
+  }
+
+  bool _sameTrades(List<Trade> a, List<Trade> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.orderId != right.orderId ||
+          left.side != right.side ||
+          (left.price - right.price).abs() > 0.0000001 ||
+          (left.quantity - right.quantity).abs() > 0.0000001 ||
+          left.timestamp != right.timestamp ||
+          left.kind != right.kind ||
+          left.status != right.status ||
+          (left.realizedPnl ?? 0) != (right.realizedPnl ?? 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   void _logPlan(StrategyTradePlan? plan, TradingSignal signal) {
     final fingerprint = plan == null
         ? 'signal:$signal'
@@ -1044,5 +1301,28 @@ class TradingEngine {
         ? 4
         : 6;
     return value.toStringAsFixed(digits);
+  }
+
+  static double? _asDouble(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is num) {
+      return value.toDouble();
+    }
+    return double.tryParse(value.toString());
+  }
+
+  static int? _asInt(dynamic value) {
+    if (value == null) {
+      return null;
+    }
+    if (value is int) {
+      return value;
+    }
+    if (value is num) {
+      return value.toInt();
+    }
+    return int.tryParse(value.toString());
   }
 }

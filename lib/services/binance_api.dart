@@ -18,14 +18,19 @@ class BinanceApiService {
     required this.apiSecret,
     this.isTestnet = true,
   }) {
-    _dio = Dio(BaseOptions(
-      baseUrl: baseUrl,
-      headers: {
-        'X-MBX-APIKEY': apiKey,
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
-    ));
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: baseUrl,
+        headers: {
+          'X-MBX-APIKEY': apiKey,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+      ),
+    );
   }
+
+  bool get hasCredentials =>
+      apiKey.trim().isNotEmpty && apiSecret.trim().isNotEmpty;
 
   String _generateSignature(String queryString) {
     final key = utf8.encode(apiSecret);
@@ -62,19 +67,25 @@ class BinanceApiService {
   }
 
   String _buildQueryString(Map<String, dynamic> params) {
-    return params.entries
-        .map((e) => '${e.key}=${e.value}')
-        .join('&');
+    return params.entries.map((e) => '${e.key}=${e.value}').join('&');
   }
 
   // --- API Methods ---
 
   Future<Map<String, dynamic>> getAccountInfo() async {
-    return _sendRequest<Map<String, dynamic>>('GET', '/fapi/v2/account', signed: true);
+    return _sendRequest<Map<String, dynamic>>(
+      'GET',
+      '/fapi/v2/account',
+      signed: true,
+    );
   }
 
   Future<Map<String, dynamic>> getBalance() async {
-    return _sendRequest<Map<String, dynamic>>('GET', '/fapi/v2/balance', signed: true);
+    return _sendRequest<Map<String, dynamic>>(
+      'GET',
+      '/fapi/v2/balance',
+      signed: true,
+    );
   }
 
   Future<Map<String, dynamic>> getExchangeInfo() async {
@@ -98,7 +109,12 @@ class BinanceApiService {
     if (price != null) params['price'] = price;
     if (stopPrice != null) params['stopPrice'] = stopPrice;
 
-    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/order', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>(
+      'POST',
+      '/fapi/v1/order',
+      params: params,
+      signed: true,
+    );
   }
 
   Future<Map<String, dynamic>> setLeverage({
@@ -109,7 +125,12 @@ class BinanceApiService {
       'symbol': symbol.toUpperCase(),
       'leverage': leverage,
     };
-    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/leverage', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>(
+      'POST',
+      '/fapi/v1/leverage',
+      params: params,
+      signed: true,
+    );
   }
 
   Future<Map<String, dynamic>> setMarginType({
@@ -120,7 +141,12 @@ class BinanceApiService {
       'symbol': symbol.toUpperCase(),
       'marginType': marginType.toUpperCase(),
     };
-    return _sendRequest<Map<String, dynamic>>('POST', '/fapi/v1/marginType', params: params, signed: true);
+    return _sendRequest<Map<String, dynamic>>(
+      'POST',
+      '/fapi/v1/marginType',
+      params: params,
+      signed: true,
+    );
   }
 
   Future<List<dynamic>> getKlines({
@@ -134,6 +160,50 @@ class BinanceApiService {
     };
     if (limit != null) params['limit'] = limit;
 
-    return _sendRequest<List<dynamic>>('GET', '/fapi/v1/klines', params: params);
+    return _sendRequest<List<dynamic>>(
+      'GET',
+      '/fapi/v1/klines',
+      params: params,
+    );
+  }
+
+  Future<List<dynamic>> getUserTrades({
+    required String symbol,
+    int limit = 100,
+  }) async {
+    final params = <String, dynamic>{
+      'symbol': symbol.toUpperCase(),
+      'limit': limit,
+    };
+
+    return _sendRequest<List<dynamic>>(
+      'GET',
+      '/fapi/v1/userTrades',
+      params: params,
+      signed: true,
+    );
+  }
+
+  Future<List<dynamic>> getPositionRisk({String? symbol}) async {
+    final params = <String, dynamic>{};
+    if (symbol != null && symbol.trim().isNotEmpty) {
+      params['symbol'] = symbol.toUpperCase();
+    }
+
+    try {
+      return _sendRequest<List<dynamic>>(
+        'GET',
+        '/fapi/v3/positionRisk',
+        params: params,
+        signed: true,
+      );
+    } on DioException {
+      return _sendRequest<List<dynamic>>(
+        'GET',
+        '/fapi/v2/positionRisk',
+        params: params,
+        signed: true,
+      );
+    }
   }
 }
