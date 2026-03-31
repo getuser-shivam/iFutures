@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../models/ai_provider.dart';
+import '../models/binance_account_status.dart';
 import '../models/manual_order.dart';
 import '../constants/symbols.dart';
 import '../models/rsi_strategy_preset.dart';
 import '../models/strategy_mode.dart';
+import '../services/binance_api.dart';
+import '../services/settings_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/app_toast.dart';
@@ -44,6 +47,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   ManualOrderType _selectedAiShortOrderType = ManualOrderType.limit;
   bool _isTestnet = true;
   bool _isLoading = true;
+  bool _isTestingBinance = false;
+  _BinanceCheckState _binanceCheckState = _BinanceCheckState.idle;
+  String? _binanceCheckMessage;
+  DateTime? _binanceCheckAt;
 
   @override
   void initState() {
@@ -309,8 +316,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    await settings.setApiKey(_apiKeyController.text);
-    await settings.setApiSecret(_apiSecretController.text);
+    await _persistBinanceSettings(settings);
     await settings.setAiUrl(_aiUrlController.text);
     await settings.setAiApiKey(_aiApiKeyController.text);
     await settings.setAiProvider(_selectedAiProvider.key);
@@ -319,7 +325,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await settings.setAiShortBiasPrice(aiShortBias);
     await settings.setAiLongOrderType(_selectedAiLongOrderType.name);
     await settings.setAiShortOrderType(_selectedAiShortOrderType.name);
-    await settings.setIsTestnet(_isTestnet);
     await settings.setSymbolList(symbols);
     await settings.setRiskStopLossPercent(stopLoss);
     await settings.setRiskTakeProfitPercent(takeProfit);
@@ -349,12 +354,168 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         foregroundColor: Colors.white,
         icon: Icons.check_circle_outline,
       );
-      ref.invalidate(binanceApiProvider);
-      ref.invalidate(binanceWsProvider);
-      ref.invalidate(aiStrategyProvider);
-      ref.invalidate(riskSettingsProvider);
-      ref.invalidate(symbolListProvider);
+      _invalidateRuntimeProviders();
     }
+  }
+
+  Future<void> _persistBinanceSettings(SettingsService settings) async {
+    await settings.setApiKey(_apiKeyController.text.trim());
+    await settings.setApiSecret(_apiSecretController.text.trim());
+    await settings.setIsTestnet(_isTestnet);
+  }
+
+  void _invalidateRuntimeProviders() {
+    final symbol = ref.read(selectedSymbolProvider);
+    ref.invalidate(binanceApiProvider);
+    ref.invalidate(binanceWsProvider);
+    ref.invalidate(aiStrategyProvider);
+    ref.invalidate(riskSettingsProvider);
+    ref.invalidate(symbolListProvider);
+    ref.invalidate(tradingEngineProvider(symbol));
+    ref.invalidate(connectionStatusProvider(symbol));
+    ref.invalidate(binanceAccountStatusProvider(symbol));
+  }
+
+  Future<void> _saveBinanceSettingsOnly() async {
+    final settings = ref.read(settingsServiceProvider);
+    await _persistBinanceSettings(settings);
+    _invalidateRuntimeProviders();
+    if (!mounted) return;
+    showAppToast(
+      context,
+      'Binance settings saved. The running app will now use this endpoint and key pair.',
+      backgroundColor: AppColors.positive.withValues(alpha: 0.95),
+      foregroundColor: Colors.white,
+      icon: Icons.verified_user_outlined,
+    );
+  }
+
+  Future<void> _testBinanceConnection() async {
+    final apiKey = _apiKeyController.text.trim();
+    final apiSecret = _apiSecretController.text.trim();
+    final symbol = ref.read(selectedSymbolProvider);
+
+    if (apiKey.isEmpty || apiSecret.isEmpty) {
+      setState(() {
+        _binanceCheckState = _BinanceCheckState.failure;
+        _binanceCheckMessage =
+            'Enter both the Binance API key and secret before testing.';
+        _binanceCheckAt = DateTime.now();
+      });
+      showAppToast(
+        context,
+        'Enter both the Binance API key and secret before testing.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return;
+    }
+
+    setState(() {
+      _isTestingBinance = true;
+      _binanceCheckState = _BinanceCheckState.testing;
+      _binanceCheckMessage = null;
+    });
+
+    try {
+      final api = BinanceApiService(
+        apiKey: apiKey,
+        apiSecret: apiSecret,
+        isTestnet: _isTestnet,
+      );
+
+      await api.syncServerTime();
+      final accountInfo = await api.getAccountInfo();
+      final positions = await api.getPositionRisk(symbol: symbol);
+      final trades = await api.getUserTrades(symbol: symbol, limit: 1);
+
+      final totalWalletBalance = _asDouble(accountInfo['totalWalletBalance']);
+      final availableBalance = _asDouble(accountInfo['availableBalance']);
+      final openPositionCount = positions.where((item) {
+        if (item is! Map) return false;
+        final amount = _asDouble(item['positionAmt']);
+        return amount != null && amount != 0;
+      }).length;
+      final lastTradeNote = trades.isEmpty
+          ? 'No recent $symbol fills were returned.'
+          : 'Recent $symbol fills are accessible.';
+
+      final message =
+          '${_isTestnet ? 'Binance Futures Testnet' : 'Binance Futures Live'} connected. '
+          '${totalWalletBalance != null ? 'Wallet ${totalWalletBalance.toStringAsFixed(2)} USDT. ' : ''}'
+          '${availableBalance != null ? 'Available ${availableBalance.toStringAsFixed(2)} USDT. ' : ''}'
+          '${openPositionCount > 0 ? 'Open positions: $openPositionCount. ' : 'No open position for $symbol. '}'
+          '$lastTradeNote';
+
+      setState(() {
+        _isTestingBinance = false;
+        _binanceCheckState = _BinanceCheckState.success;
+        _binanceCheckMessage = message;
+        _binanceCheckAt = DateTime.now();
+      });
+
+      if (!mounted) return;
+      showAppToast(
+        context,
+        'Binance connection test passed. Save Binance settings if you want the running app to use these exact values.',
+        backgroundColor: AppColors.positive.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.check_circle_outline,
+      );
+    } catch (error) {
+      final message = _friendlyBinanceConnectionError(error);
+      setState(() {
+        _isTestingBinance = false;
+        _binanceCheckState = _BinanceCheckState.failure;
+        _binanceCheckMessage = message;
+        _binanceCheckAt = DateTime.now();
+      });
+
+      if (!mounted) return;
+      showAppToast(
+        context,
+        message,
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+    }
+  }
+
+  double? _asDouble(Object? value) {
+    if (value == null) return null;
+    if (value is num) return value.toDouble();
+    return double.tryParse(value.toString());
+  }
+
+  String _friendlyBinanceConnectionError(Object error) {
+    if (error is BinanceApiException) {
+      if (error.body.contains('-1022')) {
+        return 'Binance rejected the signature. The API secret in Settings does not match the API key.';
+      }
+      if (error.body.contains('-1021')) {
+        return 'Binance rejected the timestamp. The app retried with server time, but the request still failed.';
+      }
+      if (error.body.contains('-2015') || error.body.contains('-2014')) {
+        return 'Binance rejected the key. Check the API key, trusted IP whitelist, and Futures permission.';
+      }
+      if (error.body.contains('-1003')) {
+        return 'Binance rate-limited the request. Wait a moment and test again.';
+      }
+      return 'Binance returned an error: ${error.body}';
+    }
+
+    final text = error.toString().toLowerCase();
+    if (text.contains('failed host lookup') ||
+        text.contains('socketexception')) {
+      return 'The app could not reach Binance. Check DNS, VPN/Tailscale, firewall rules, and whether Live or Testnet is the correct endpoint.';
+    }
+    if (text.contains('handshake') || text.contains('certificate')) {
+      return 'TLS handshake failed while contacting Binance. Check network interception, antivirus HTTPS inspection, or system certificates.';
+    }
+
+    return 'Binance connection test failed: $error';
   }
 
   @override
@@ -362,6 +523,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final currentMode = ref.watch(currentStrategyModeProvider);
     final currentStrategy = ref.watch(currentStrategyProvider);
     final symbol = ref.watch(selectedSymbolProvider);
+    final binanceStatus = ref.watch(binanceAccountStatusProvider(symbol));
 
     if (_isLoading) {
       return Scaffold(
@@ -437,9 +599,80 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ],
           _SettingsSection(
             title: 'Binance API Configuration',
-            subtitle: 'Connect securely to your exchange account.',
+            subtitle:
+                'Connect the app to Binance Futures. The Testnet switch only changes the endpoint; use the connection test below to verify the key, IP whitelist, and Futures permissions.',
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    StatusPill(
+                      label: _isTestnet
+                          ? 'Environment: Testnet'
+                          : 'Environment: Live',
+                      color: _isTestnet
+                          ? AppColors.glowAmber
+                          : AppColors.glowCyan,
+                    ),
+                    _buildSavedBinanceStatusPill(binanceStatus),
+                    if (_binanceCheckState != _BinanceCheckState.idle)
+                      StatusPill(
+                        label: switch (_binanceCheckState) {
+                          _BinanceCheckState.testing => 'Last Test: Running',
+                          _BinanceCheckState.success => 'Last Test: Passed',
+                          _BinanceCheckState.failure => 'Last Test: Failed',
+                          _BinanceCheckState.idle => 'Last Test: Idle',
+                        },
+                        color: switch (_binanceCheckState) {
+                          _BinanceCheckState.testing => AppColors.glowAmber,
+                          _BinanceCheckState.success => AppColors.positive,
+                          _BinanceCheckState.failure => AppColors.negative,
+                          _BinanceCheckState.idle => AppColors.textMuted,
+                        },
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                _InfoCallout(
+                  title: 'Endpoint',
+                  body: _isTestnet
+                      ? 'The app is pointed at Binance Futures Testnet: testnet.binancefuture.com'
+                      : 'The app is pointed at Binance Futures Live: fapi.binance.com',
+                  accentColor: _isTestnet
+                      ? AppColors.glowAmber
+                      : AppColors.glowCyan,
+                ),
+                if (binanceStatus.hasValue &&
+                    binanceStatus.valueOrNull?.message != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoCallout(
+                    title: 'Saved App Status',
+                    body: binanceStatus.valueOrNull!.message!,
+                    accentColor: _binanceStatusColor(
+                      binanceStatus.valueOrNull!.state,
+                    ),
+                  ),
+                ],
+                if (_binanceCheckMessage != null) ...[
+                  const SizedBox(height: 12),
+                  _InfoCallout(
+                    title: _binanceCheckState == _BinanceCheckState.success
+                        ? 'Latest Connection Test'
+                        : 'Latest Connection Error',
+                    body: _binanceCheckAt == null
+                        ? _binanceCheckMessage!
+                        : '${_binanceCheckMessage!}\nChecked at ${_formatTimestamp(_binanceCheckAt!)}',
+                    accentColor: switch (_binanceCheckState) {
+                      _BinanceCheckState.success => AppColors.positive,
+                      _BinanceCheckState.failure => AppColors.negative,
+                      _BinanceCheckState.testing => AppColors.glowAmber,
+                      _BinanceCheckState.idle => AppColors.border,
+                    },
+                  ),
+                ],
+                const SizedBox(height: 16),
                 TextField(
                   controller: _apiKeyController,
                   decoration: const InputDecoration(labelText: 'API Key'),
@@ -457,6 +690,48 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   value: _isTestnet,
                   activeThumbColor: AppColors.glowCyan,
                   onChanged: (val) => setState(() => _isTestnet = val),
+                ),
+                const SizedBox(height: 4),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Keys are stored securely on this machine. Changing Testnet does not test the connection by itself.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    SizedBox(
+                      width: 220,
+                      child: OutlinedButton.icon(
+                        onPressed: _saveBinanceSettingsOnly,
+                        icon: const Icon(Icons.save_outlined),
+                        label: const Text('SAVE BINANCE SETTINGS'),
+                      ),
+                    ),
+                    SizedBox(
+                      width: 220,
+                      child: ElevatedButton.icon(
+                        onPressed: _isTestingBinance
+                            ? null
+                            : _testBinanceConnection,
+                        icon: Icon(
+                          _isTestingBinance
+                              ? Icons.hourglass_top
+                              : Icons.wifi_tethering_outlined,
+                        ),
+                        label: Text(
+                          _isTestingBinance ? 'TESTING...' : 'TEST CONNECTION',
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -752,7 +1027,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: _saveSettings,
-                    child: const Text('SAVE SETTINGS'),
+                    child: const Text('SAVE ALL SETTINGS'),
                   ),
                 ),
               ],
@@ -780,6 +1055,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       StrategyMode.ai =>
         'AI mode keeps provider setup and bias zones here, while the dashboard shows the live strategy terminal and account activity.',
     };
+  }
+
+  Widget _buildSavedBinanceStatusPill(AsyncValue<BinanceAccountStatus> status) {
+    return status.when(
+      data: (data) => StatusPill(
+        label: switch (data.state) {
+          BinanceAccountState.notConfigured => 'App Status: Not Configured',
+          BinanceAccountState.checking => 'App Status: Checking',
+          BinanceAccountState.active => 'App Status: Active',
+          BinanceAccountState.attentionRequired => 'App Status: Attention',
+        },
+        color: _binanceStatusColor(data.state),
+      ),
+      loading: () => const StatusPill(
+        label: 'App Status: Checking',
+        color: AppColors.glowAmber,
+      ),
+      error: (error, stack) => const StatusPill(
+        label: 'App Status: Error',
+        color: AppColors.negative,
+      ),
+    );
+  }
+
+  Color _binanceStatusColor(BinanceAccountState state) {
+    return switch (state) {
+      BinanceAccountState.notConfigured => AppColors.warning,
+      BinanceAccountState.checking => AppColors.glowAmber,
+      BinanceAccountState.active => AppColors.positive,
+      BinanceAccountState.attentionRequired => AppColors.negative,
+    };
+  }
+
+  String _formatTimestamp(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '${local.year}-${local.month.toString().padLeft(2, '0')}-${local.day.toString().padLeft(2, '0')} $hour:$minute $suffix';
   }
 }
 
@@ -856,6 +1170,55 @@ class _WorkspaceBlock extends StatelessWidget {
         const SizedBox(height: 12),
         child,
       ],
+    );
+  }
+}
+
+enum _BinanceCheckState { idle, testing, success, failure }
+
+class _InfoCallout extends StatelessWidget {
+  final String title;
+  final String body;
+  final Color accentColor;
+
+  const _InfoCallout({
+    required this.title,
+    required this.body,
+    required this.accentColor,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: accentColor.withValues(alpha: 0.65)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: TextStyle(
+              color: accentColor,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            body,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+              height: 1.45,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
