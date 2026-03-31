@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../constants/symbols.dart';
+import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
 import '../models/strategy_mode.dart';
 import '../widgets/common/app_panel.dart';
@@ -33,6 +34,9 @@ class DashboardScreen extends ConsumerWidget {
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
+    final binanceAccountStatus = ref.watch(
+      binanceAccountStatusProvider(symbol),
+    );
     final currentMode = ref.watch(currentStrategyModeProvider);
     final currentStrategy = ref.watch(currentStrategyProvider);
     final symbolsAsync = ref.watch(symbolListProvider);
@@ -115,6 +119,7 @@ class DashboardScreen extends ConsumerWidget {
                       context,
                       ticker,
                       symbol,
+                      binanceAccountStatus,
                       currentMode,
                       currentStrategy?.name,
                     ),
@@ -241,6 +246,7 @@ class DashboardScreen extends ConsumerWidget {
                       isRunning,
                       engineAsync,
                       connectionStatus,
+                      binanceAccountStatus,
                     ),
                   ),
                 ),
@@ -316,6 +322,7 @@ class DashboardScreen extends ConsumerWidget {
     BuildContext context,
     AsyncValue<dynamic> ticker,
     String symbol,
+    AsyncValue<BinanceAccountStatus> binanceAccountStatus,
     StrategyMode currentMode,
     String? strategyName,
   ) {
@@ -414,9 +421,17 @@ class DashboardScreen extends ConsumerWidget {
                 ? CrossAxisAlignment.start
                 : CrossAxisAlignment.end,
             children: [
-              StatusPill(
-                label: 'Mode: ${currentMode.label}',
-                color: _modeColor(currentMode),
+              Wrap(
+                alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  StatusPill(
+                    label: 'Mode: ${currentMode.label}',
+                    color: _modeColor(currentMode),
+                  ),
+                  _buildBinanceBadge(binanceAccountStatus, compact: true),
+                ],
               ),
               const SizedBox(height: 8),
               ConstrainedBox(
@@ -569,6 +584,7 @@ class DashboardScreen extends ConsumerWidget {
     bool isRunning,
     AsyncValue<TradingEngine> engineAsync,
     AsyncValue<ConnectionStatus> connectionStatus,
+    AsyncValue<BinanceAccountStatus> binanceAccountStatus,
   ) {
     return Wrap(
       spacing: 12,
@@ -592,8 +608,44 @@ class DashboardScreen extends ConsumerWidget {
             color: AppColors.negative,
           ),
         ),
+        _buildBinanceBadge(binanceAccountStatus),
         _buildConnectionBadge(connectionStatus),
       ],
+    );
+  }
+
+  Widget _buildBinanceBadge(
+    AsyncValue<BinanceAccountStatus> status, {
+    bool compact = false,
+  }) {
+    return status.when(
+      data: (data) {
+        final prefix = data.isTestnet ? 'Binance Testnet' : 'Binance Live';
+        return switch (data.state) {
+          BinanceAccountState.notConfigured => StatusPill(
+            label: compact ? 'Binance: Not Set' : '$prefix: Not Configured',
+            color: AppColors.warning,
+          ),
+          BinanceAccountState.checking => StatusPill(
+            label: compact ? 'Binance: Checking' : '$prefix: Checking',
+            color: AppColors.glowAmber,
+          ),
+          BinanceAccountState.active => StatusPill(
+            label: compact ? 'Binance: Active' : '$prefix: Active',
+            color: AppColors.positive,
+          ),
+          BinanceAccountState.attentionRequired => StatusPill(
+            label: compact ? 'Binance: Attention' : '$prefix: Attention',
+            color: AppColors.negative,
+          ),
+        };
+      },
+      loading: () => StatusPill(
+        label: compact ? 'Binance: Checking' : 'Binance: Checking',
+        color: AppColors.glowAmber,
+      ),
+      error: (e, _) =>
+          StatusPill(label: 'Binance: Error', color: AppColors.negative),
     );
   }
 

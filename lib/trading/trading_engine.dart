@@ -4,6 +4,7 @@ import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
+import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
 import '../models/strategy_console_entry.dart';
 import '../services/binance_api.dart';
@@ -34,6 +35,7 @@ class TradingEngine {
   Timer? _connectionTimer;
   DateTime? _lastMessageAt;
   int? _lastLatencyMs;
+  BinanceAccountStatus _binanceAccountStatus;
   TradingSignal? _lastSignal;
   StrategyTradePlan? _lastDecisionPlan;
   String? _lastLoggedPlanFingerprint;
@@ -43,6 +45,8 @@ class TradingEngine {
   final _tradeController = StreamController<List<Trade>>.broadcast();
   final _positionController = StreamController<Position?>.broadcast();
   final _connectionController = StreamController<ConnectionStatus>.broadcast();
+  final _binanceAccountController =
+      StreamController<BinanceAccountStatus>.broadcast();
   final _signalController = StreamController<TradingSignal?>.broadcast();
   final _decisionPlanController =
       StreamController<StrategyTradePlan?>.broadcast();
@@ -55,6 +59,8 @@ class TradingEngine {
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
   Stream<Position?> get positionStream => _positionController.stream;
   Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
+  Stream<BinanceAccountStatus> get binanceAccountStatusStream =>
+      _binanceAccountController.stream;
   Stream<TradingSignal?> get signalStream => _signalController.stream;
   Stream<StrategyTradePlan?> get decisionPlanStream =>
       _decisionPlanController.stream;
@@ -70,7 +76,9 @@ class TradingEngine {
     required this.strategy,
     required this.riskSettings,
     required this.symbol,
-  });
+  }) : _binanceAccountStatus = BinanceAccountStatus.notConfigured(
+         isTestnet: apiService.isTestnet,
+       );
 
   bool get isStreaming => _isStreaming;
   bool get isTradingEnabled => _isAutoTradingEnabled;
@@ -84,6 +92,7 @@ class TradingEngine {
       List.unmodifiable(_consoleEntries);
   TradingSignal? get lastSignal => _lastSignal;
   StrategyTradePlan? get lastDecisionPlan => _lastDecisionPlan;
+  BinanceAccountStatus get lastBinanceAccountStatus => _binanceAccountStatus;
 
   Future<void> startMarketData() async {
     if (_isStreaming) return;
@@ -95,6 +104,19 @@ class TradingEngine {
     _decisionPlanController.add(_lastDecisionPlan);
     _consoleLogController.add(consoleEntries);
     _emitPendingOrders();
+    _emitBinanceAccountStatus(
+      apiService.hasCredentials
+          ? BinanceAccountStatus.checking(
+              isTestnet: apiService.isTestnet,
+              message:
+                  'Checking ${apiService.isTestnet ? 'Binance testnet' : 'Binance live'} account sync...',
+            )
+          : BinanceAccountStatus.notConfigured(
+              isTestnet: apiService.isTestnet,
+              message:
+                  'Binance API credentials are not configured for this app yet.',
+            ),
+    );
     _startConnectionTicker();
     if (apiService.hasCredentials) {
       final syncedExchangeState = await _loadInitialAccountState();
@@ -718,6 +740,7 @@ class TradingEngine {
     _tradeController.close();
     _positionController.close();
     _connectionController.close();
+    _binanceAccountController.close();
     _signalController.close();
     _decisionPlanController.close();
     _consoleLogController.close();
@@ -828,6 +851,12 @@ class TradingEngine {
 
   Future<bool> _syncExchangeState({bool logSuccess = false}) async {
     if (!apiService.hasCredentials) {
+      _emitBinanceAccountStatus(
+        BinanceAccountStatus.notConfigured(
+          isTestnet: apiService.isTestnet,
+          message: 'Binance API credentials are not configured.',
+        ),
+      );
       return false;
     }
 
@@ -863,8 +892,23 @@ class TradingEngine {
           level: StrategyConsoleLevel.success,
         );
       }
+      _emitBinanceAccountStatus(
+        BinanceAccountStatus.active(
+          isTestnet: apiService.isTestnet,
+          lastSyncedAt: DateTime.now(),
+          message:
+              '${apiService.isTestnet ? 'Binance testnet' : 'Binance live'} account sync is active.',
+        ),
+      );
       return true;
     } catch (e) {
+      _emitBinanceAccountStatus(
+        BinanceAccountStatus.attentionRequired(
+          isTestnet: apiService.isTestnet,
+          lastSyncedAt: _binanceAccountStatus.lastSyncedAt,
+          message: _friendlyExchangeSyncError(e),
+        ),
+      );
       if (logSuccess) {
         _logConsole(
           _friendlyExchangeSyncError(e),
@@ -892,6 +936,14 @@ class TradingEngine {
   }
 
   bool get _isExchangeSyncMode => apiService.hasCredentials;
+
+  void _emitBinanceAccountStatus(BinanceAccountStatus status) {
+    _binanceAccountStatus = status;
+    if (_binanceAccountController.isClosed) {
+      return;
+    }
+    _binanceAccountController.add(status);
+  }
 
   void _logExecutionBlocked(String message) {
     if (_lastExecutionBlockFingerprint == message) {

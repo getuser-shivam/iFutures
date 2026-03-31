@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:ifutures/models/binance_account_status.dart';
 import 'package:ifutures/models/connection_status.dart';
 import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/risk_settings.dart';
@@ -326,6 +327,7 @@ void main() {
       expect(engine.trades.first.kind, 'LIVE');
       expect(engine.trades.last.kind, 'EXIT');
       expect(engine.trades.last.realizedPnl, 0.07);
+      expect(engine.lastBinanceAccountStatus.state, BinanceAccountState.active);
       expect(
         engine.trades.every((trade) => trade.status != 'simulated'),
         isTrue,

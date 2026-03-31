@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:ifutures/constants/symbols.dart';
+import 'package:ifutures/models/binance_account_status.dart';
 import 'package:ifutures/models/connection_status.dart';
 import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
@@ -95,6 +96,13 @@ void main() {
           }),
           connectionStatusProvider.overrideWith((ref, symbol) async* {
             yield ConnectionStatus.disconnected();
+          }),
+          binanceAccountStatusProvider.overrideWith((ref, symbol) async* {
+            yield BinanceAccountStatus.active(
+              isTestnet: true,
+              lastSyncedAt: DateTime(2026, 3, 20, 12, 1),
+              message: 'Binance testnet account sync is active.',
+            );
           }),
           priceAlertsProvider.overrideWith((ref, symbol) async => const []),
           marketAnalysisProvider.overrideWith((ref) async {
@@ -193,5 +201,6 @@ void main() {
     expect(find.text('Strategy Terminal'), findsOneWidget);
     expect(find.text('Manual Order Ticket'), findsNothing);
     expect(find.text('Current Price'), findsOneWidget);
+    expect(find.text('Binance: Active'), findsOneWidget);
   });
 }

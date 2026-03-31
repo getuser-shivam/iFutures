@@ -19,6 +19,7 @@ import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
+import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
 import '../models/price_alert.dart';
 import '../models/market_analysis.dart';
@@ -417,6 +418,22 @@ final connectionStatusProvider =
         yield* engine.connectionStream;
       } else {
         yield ConnectionStatus.disconnected();
+      }
+    });
+
+final binanceAccountStatusProvider =
+    StreamProvider.family<BinanceAccountStatus, String>((ref, symbol) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        yield engine.lastBinanceAccountStatus;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.binanceAccountStatusStream;
+      } else {
+        yield const BinanceAccountStatus.notConfigured();
       }
     });
 
