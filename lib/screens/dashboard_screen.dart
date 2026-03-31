@@ -4,15 +4,12 @@ import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../constants/symbols.dart';
 import '../models/connection_status.dart';
+import '../models/strategy_mode.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/action_button.dart';
 import '../widgets/common/status_pill.dart';
-import '../widgets/dashboard/mode_selector.dart';
-import '../widgets/dashboard/strategy_console_card.dart';
-import '../widgets/dashboard/manual_order_ticket.dart';
 import '../widgets/dashboard/market_analysis_card.dart';
 import '../widgets/dashboard/daily_performance_card.dart';
-import '../widgets/dashboard/backtest_card.dart';
 import '../widgets/dashboard/open_position_card.dart';
 import '../widgets/dashboard/price_alert_listener.dart';
 import '../widgets/dashboard/price_alerts_card.dart';
@@ -35,6 +32,8 @@ class DashboardScreen extends ConsumerWidget {
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
     final settingsInit = ref.watch(settingsInitProvider);
     final connectionStatus = ref.watch(connectionStatusProvider(symbol));
+    final currentMode = ref.watch(currentStrategyModeProvider);
+    final currentStrategy = ref.watch(currentStrategyProvider);
     final symbolsAsync = ref.watch(symbolListProvider);
     final symbols = symbolsAsync.maybeWhen(
       data: (data) => data,
@@ -111,25 +110,24 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: _buildHeader(context, ticker, symbol),
+                    child: _buildHeader(
+                      context,
+                      ticker,
+                      symbol,
+                      currentMode,
+                      currentStrategy?.name,
+                    ),
                   ),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: StrategyConsoleCard(symbol: symbol),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: ManualOrderTicket(symbol: symbol),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: MarketAnalysisCard(symbol: symbol),
+                    child: _buildStrategyWorkspaceHint(
+                      context,
+                      currentMode,
+                      currentStrategy?.name,
+                      symbol,
+                    ),
                   ),
                 ),
                 SliverPadding(
@@ -189,6 +187,12 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
+                    child: MarketAnalysisCard(symbol: symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
                     child: OpenPositionCard(
                       symbol: symbol,
                       latestPrice: latestPrice,
@@ -208,19 +212,13 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: PerformanceMetrics(symbol: symbol),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: BacktestCard(symbol: symbol),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
                     child: PriceAlertsCard(symbol: symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: PerformanceMetrics(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
@@ -236,19 +234,6 @@ class DashboardScreen extends ConsumerWidget {
                       isRunning,
                       engineAsync,
                       connectionStatus,
-                    ),
-                  ),
-                ),
-                SliverToBoxAdapter(
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Text(
-                      'Market Insights - Live Monitoring',
-                      style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: AppColors.textMuted,
-                        letterSpacing: 0.4,
-                      ),
-                      textAlign: TextAlign.center,
                     ),
                   ),
                 ),
@@ -324,14 +309,17 @@ class DashboardScreen extends ConsumerWidget {
     BuildContext context,
     AsyncValue<dynamic> ticker,
     String symbol,
+    StrategyMode currentMode,
+    String? strategyName,
   ) {
     final textTheme = Theme.of(context).textTheme;
 
     return AppPanel(
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 780;
+
+          final leftContent = Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
@@ -343,8 +331,10 @@ class DashboardScreen extends ConsumerWidget {
                 data: (data) {
                   final dynamic priceValue = data is Map ? data['c'] : data;
                   final priceText = priceValue?.toString() ?? '--';
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.end,
+                  return Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    spacing: 8,
+                    runSpacing: 8,
                     children: [
                       Text(
                         priceText,
@@ -356,17 +346,18 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
-                      const Text(
-                        'USDT',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: 0.4,
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 3),
+                        child: Text(
+                          'USDT',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: 0.4,
+                          ),
                         ),
                       ),
-                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 8,
@@ -409,8 +400,145 @@ class DashboardScreen extends ConsumerWidget {
                 ),
               ),
             ],
+          );
+
+          final rightContent = Column(
+            crossAxisAlignment: isCompact
+                ? CrossAxisAlignment.start
+                : CrossAxisAlignment.end,
+            children: [
+              StatusPill(
+                label: 'Mode: ${currentMode.label}',
+                color: _modeColor(currentMode),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isCompact ? constraints.maxWidth : 220,
+                ),
+                child: Text(
+                  strategyName ?? 'Loading strategy...',
+                  textAlign: isCompact ? TextAlign.left : TextAlign.right,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: isCompact ? constraints.maxWidth : 220,
+                ),
+                child: Text(
+                  'Manage AI, ALGO, and MANUAL in Settings',
+                  textAlign: isCompact ? TextAlign.left : TextAlign.right,
+                  style: textTheme.labelSmall?.copyWith(
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+              ),
+            ],
+          );
+
+          if (isCompact) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [leftContent, const SizedBox(height: 16), rightContent],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: leftContent),
+              const SizedBox(width: 20),
+              Flexible(child: rightContent),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStrategyWorkspaceHint(
+    BuildContext context,
+    StrategyMode currentMode,
+    String? strategyName,
+    String symbol,
+  ) {
+    return AppPanel(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.tune, color: AppColors.textSecondary, size: 20),
+                  SizedBox(width: 8),
+                  Text(
+                    'Strategy Workspace',
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              TextButton.icon(
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.settings_outlined, size: 16),
+                label: const Text('OPEN SETTINGS'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.glowCyan,
+                ),
+              ),
+            ],
           ),
-          const ModeSelector(),
+          const SizedBox(height: 8),
+          const Text(
+            'AI, ALGO, and MANUAL tools have been moved into Settings so the dashboard stays focused on live price, positions, performance, and history.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              StatusPill(
+                label: 'Active: ${currentMode.label}',
+                color: _modeColor(currentMode),
+              ),
+              if (strategyName != null && strategyName.trim().isNotEmpty)
+                StatusPill(label: strategyName, color: AppColors.glowCyan),
+              StatusPill(label: 'Symbol: $symbol', color: AppColors.glowAmber),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            _dashboardHintForMode(currentMode),
+            style: const TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 11,
+              height: 1.4,
+            ),
+          ),
         ],
       ),
     );
@@ -510,6 +638,25 @@ class DashboardScreen extends ConsumerWidget {
       error: (e, _) =>
           const StatusPill(label: 'Market: Error', color: AppColors.negative),
     );
+  }
+
+  static Color _modeColor(StrategyMode mode) {
+    return switch (mode) {
+      StrategyMode.manual => AppColors.glowAmber,
+      StrategyMode.algo => AppColors.positive,
+      StrategyMode.ai => AppColors.glowCyan,
+    };
+  }
+
+  static String _dashboardHintForMode(StrategyMode mode) {
+    return switch (mode) {
+      StrategyMode.manual =>
+        'Manual order controls are available from Settings > Strategy Workspace. The dashboard now stays dedicated to market and account monitoring.',
+      StrategyMode.algo =>
+        'RSI tuning, backtests, and strategy output are now grouped in Settings > Strategy Workspace.',
+      StrategyMode.ai =>
+        'AI provider settings, trade zones, and the live strategy terminal are now grouped in Settings > Strategy Workspace.',
+    };
   }
 }
 

@@ -183,24 +183,13 @@ void main() {
     expect(materialApp.title, 'iFutures Bot');
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
-    expect(find.text('Strategy Terminal'), findsOneWidget);
-    expect(find.text('SHORT | Post Only'), findsOneWidget);
-    expect(find.text('Planned Exposure'), findsOneWidget);
-    expect(find.text('Current Position'), findsWidgets);
-    expect(find.text('Terminal Output'), findsOneWidget);
-    await tester.scrollUntilVisible(
-      find.text('Manual Order Ticket'),
-      300,
-      scrollable: find.byType(Scrollable).first,
+    expect(find.text('Strategy Workspace'), findsOneWidget);
+    expect(
+      find.textContaining('AI, ALGO, and MANUAL tools have been moved'),
+      findsOneWidget,
     );
-    await tester.pumpAndSettle();
-    expect(find.text('Manual Order Ticket'), findsOneWidget);
-    expect(find.text('Open Long'), findsOneWidget);
-    expect(find.text('Open Short'), findsOneWidget);
-    expect(find.text('Close Long'), findsOneWidget);
-    expect(find.text('Close Short'), findsOneWidget);
-    expect(find.text('Market'), findsOneWidget);
-    expect(find.text('Limit'), findsOneWidget);
+    expect(find.text('Strategy Terminal'), findsNothing);
+    expect(find.text('Manual Order Ticket'), findsNothing);
 
     await tester.scrollUntilVisible(
       find.text('Market Analysis'),

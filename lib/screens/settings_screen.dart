@@ -9,6 +9,11 @@ import '../models/strategy_mode.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common/app_panel.dart';
 import '../widgets/common/app_toast.dart';
+import '../widgets/common/status_pill.dart';
+import '../widgets/dashboard/backtest_card.dart';
+import '../widgets/dashboard/manual_order_ticket.dart';
+import '../widgets/dashboard/mode_selector.dart';
+import '../widgets/dashboard/strategy_console_card.dart';
 import '../trading/algo_strategy.dart';
 import '../trading/ai_strategy.dart';
 
@@ -355,6 +360,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final currentMode = ref.watch(currentStrategyModeProvider);
+    final currentStrategy = ref.watch(currentStrategyProvider);
+    final symbol = ref.watch(selectedSymbolProvider);
+
     if (_isLoading) {
       return Scaffold(
         appBar: AppBar(title: const Text('Bot Settings')),
@@ -367,6 +376,78 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       body: ListView(
         padding: const EdgeInsets.all(20),
         children: [
+          _SettingsSection(
+            title: 'Strategy Workspace',
+            subtitle:
+                'Choose the active mode here. AI, ALGO, and MANUAL tools now live in Settings so the dashboard stays focused on live monitoring.',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: ModeSelector(),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    StatusPill(
+                      label: 'Active: ${currentMode.label}',
+                      color: _modeColor(currentMode),
+                    ),
+                    if (currentStrategy != null)
+                      StatusPill(
+                        label: currentStrategy.name,
+                        color: AppColors.glowCyan,
+                      ),
+                    StatusPill(
+                      label: 'Symbol: $symbol',
+                      color: AppColors.glowAmber,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  _strategyWorkspaceDescription(currentMode),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                    height: 1.45,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          _WorkspaceBlock(
+            title: 'Manual Workspace',
+            subtitle:
+                'Open, close, and override positions from here. Manual controls stay available even when AI or ALGO is the active mode.',
+            child: ManualOrderTicket(symbol: symbol),
+          ),
+          const SizedBox(height: 16),
+          if (currentMode != StrategyMode.manual) ...[
+            _WorkspaceBlock(
+              title: currentMode == StrategyMode.ai
+                  ? 'AI Workspace'
+                  : 'Algorithm Workspace',
+              subtitle: currentMode == StrategyMode.ai
+                  ? 'Review the live AI plan, rationale, and current execution posture for the selected symbol.'
+                  : 'Review the active algorithm plan, terminal output, and position context for the selected symbol.',
+              child: StrategyConsoleCard(symbol: symbol),
+            ),
+            const SizedBox(height: 16),
+          ],
+          if (currentMode == StrategyMode.algo) ...[
+            _WorkspaceBlock(
+              title: 'Algorithm Lab',
+              subtitle:
+                  'Run backtests here so RSI experiments and tuning stay grouped away from the live dashboard.',
+              child: BacktestCard(symbol: symbol),
+            ),
+            const SizedBox(height: 16),
+          ],
           _SettingsSection(
             title: 'Binance API Configuration',
             subtitle: 'Connect securely to your exchange account.',
@@ -694,6 +775,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     );
   }
+
+  Color _modeColor(StrategyMode mode) {
+    return switch (mode) {
+      StrategyMode.manual => AppColors.glowAmber,
+      StrategyMode.algo => AppColors.positive,
+      StrategyMode.ai => AppColors.glowCyan,
+    };
+  }
+
+  String _strategyWorkspaceDescription(StrategyMode mode) {
+    return switch (mode) {
+      StrategyMode.manual =>
+        'Manual mode keeps the order desk here in Settings. Use it to override AI or ALGO cleanly without crowding the dashboard.',
+      StrategyMode.algo =>
+        'ALGO mode keeps RSI tuning, backtests, and the live strategy console together here so the dashboard can stay focused on positions and market context.',
+      StrategyMode.ai =>
+        'AI mode keeps provider setup, bias zones, and the live strategy console together here so it is easier to manage and audit.',
+    };
+  }
 }
 
 class _SettingsSection extends StatelessWidget {
@@ -733,6 +833,42 @@ class _SettingsSection extends StatelessWidget {
           child,
         ],
       ),
+    );
+  }
+}
+
+class _WorkspaceBlock extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final Widget child;
+
+  const _WorkspaceBlock({
+    required this.title,
+    required this.subtitle,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.textPrimary,
+            fontSize: 15,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          subtitle,
+          style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+        ),
+        const SizedBox(height: 12),
+        child,
+      ],
     );
   }
 }
