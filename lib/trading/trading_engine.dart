@@ -928,7 +928,11 @@ class TradingEngine {
         return 'Binance account sync failed because this machine clock is ahead of Binance server time. The app is retrying with server time.';
       }
       if (error.body.contains('-2015') || error.body.contains('-2014')) {
-        return 'Binance account sync failed: API key, IP whitelist, or Futures permission was rejected by Binance.';
+        final requestIp = _extractRequestIp(error.body);
+        final requestIpText = requestIp == null
+            ? ''
+            : ' Binance reported request IP $requestIp.';
+        return 'Binance account sync failed: API key, IP whitelist, or Futures permission was rejected by Binance.$requestIpText';
       }
     }
 
@@ -936,6 +940,11 @@ class TradingEngine {
   }
 
   bool get _isExchangeSyncMode => apiService.hasCredentials;
+
+  String? _extractRequestIp(String body) {
+    final match = RegExp(r'request ip:\s*([0-9a-fA-F\.:]+)').firstMatch(body);
+    return match?.group(1);
+  }
 
   void _emitBinanceAccountStatus(BinanceAccountStatus status) {
     _binanceAccountStatus = status;

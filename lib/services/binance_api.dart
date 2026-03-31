@@ -42,6 +42,7 @@ class BinanceApiService {
   }) async {
     final requestParams = <String, dynamic>{...?params};
     if (signed) {
+      requestParams.putIfAbsent('recvWindow', () => 5000);
       requestParams['timestamp'] =
           DateTime.now().millisecondsSinceEpoch + _timestampOffsetMs;
       requestParams['signature'] = _generateSignature(
@@ -116,7 +117,12 @@ class BinanceApiService {
   }
 
   String _buildQueryString(Map<String, dynamic> params) {
-    return params.entries.map((e) => '${e.key}=${e.value}').join('&');
+    return params.entries
+        .map(
+          (entry) =>
+              '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value.toString())}',
+        )
+        .join('&');
   }
 
   // --- API Methods ---

@@ -498,7 +498,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return 'Binance rejected the timestamp. The app retried with server time, but the request still failed.';
       }
       if (error.body.contains('-2015') || error.body.contains('-2014')) {
-        return 'Binance rejected the key. Check the API key, trusted IP whitelist, and Futures permission.';
+        final requestIp = _extractRequestIp(error.body);
+        final requestIpText = requestIp == null
+            ? ''
+            : ' Binance says the request is coming from $requestIp.';
+        return 'Binance rejected the key. Check the API key, trusted IP whitelist, and Futures permission.$requestIpText';
       }
       if (error.body.contains('-1003')) {
         return 'Binance rate-limited the request. Wait a moment and test again.';
@@ -516,6 +520,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
 
     return 'Binance connection test failed: $error';
+  }
+
+  String? _extractRequestIp(String body) {
+    final match = RegExp(r'request ip:\s*([0-9a-fA-F\.:]+)').firstMatch(body);
+    return match?.group(1);
   }
 
   @override
