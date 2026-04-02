@@ -10,6 +10,7 @@ import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
 import 'package:ifutures/models/position.dart';
 import 'package:ifutures/models/risk_settings.dart';
+import 'package:ifutures/models/ai_service_status.dart';
 import 'package:ifutures/models/strategy_console_entry.dart';
 import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/main.dart';
@@ -44,6 +45,20 @@ void main() {
           }),
           tradeStreamProvider.overrideWith((ref, symbol) async* {
             yield const <Trade>[];
+          }),
+          accountTradeStreamProvider.overrideWith((ref, symbol) async* {
+            yield [
+              Trade(
+                symbol: 'TRIAUSDT',
+                side: 'BUY',
+                price: 0.0032,
+                quantity: 900,
+                timestamp: DateTime(2026, 3, 20, 11, 40),
+                status: 'filled',
+                strategy: 'Binance Live',
+                kind: 'LIVE',
+              ),
+            ];
           }),
           positionStreamProvider.overrideWith((ref, symbol) async* {
             yield Position(
@@ -102,6 +117,13 @@ void main() {
               isTestnet: true,
               lastSyncedAt: DateTime(2026, 3, 20, 12, 1),
               message: 'Binance testnet account sync is active.',
+            );
+          }),
+          aiServiceStatusProvider.overrideWith((ref, symbol) async {
+            return AiServiceStatus.active(
+              providerLabel: 'Groq Chat',
+              checkedAt: DateTime(2026, 3, 20, 12, 2),
+              message: 'Groq Chat accepted the last AI connectivity check.',
             );
           }),
           priceAlertsProvider.overrideWith((ref, symbol) async => const []),
@@ -184,7 +206,6 @@ void main() {
 
     expect(find.byType(MaterialApp), findsOneWidget);
     expect(find.byType(DashboardScreen), findsOneWidget);
-    expect(find.text('iFutures'), findsOneWidget);
     await tester.pumpAndSettle();
 
     final materialApp = tester.widget<MaterialApp>(find.byType(MaterialApp));
@@ -192,6 +213,8 @@ void main() {
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
     expect(find.text('Strategy Workspace'), findsOneWidget);
+    expect(find.text('USDT'), findsOneWidget);
+    expect(find.byIcon(Icons.photo_library_outlined), findsOneWidget);
     expect(
       find.textContaining(
         'Mode selection, manual tickets, and backtesting now live in Settings',
@@ -200,7 +223,6 @@ void main() {
     );
     expect(find.text('Strategy Terminal'), findsOneWidget);
     expect(find.text('Manual Order Ticket'), findsNothing);
-    expect(find.text('Current Price'), findsOneWidget);
     expect(find.text('Binance: Active'), findsOneWidget);
   });
 }

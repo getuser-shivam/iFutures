@@ -60,7 +60,10 @@ void main() {
       _exitTrade(4, DateTime(2026, 3, 20, 0, 0)),
     ];
 
-    final summary = PerformanceSummaryCalculator.calculateForDay(trades, DateTime(2026, 3, 19));
+    final summary = PerformanceSummaryCalculator.calculateForDay(
+      trades,
+      DateTime(2026, 3, 19),
+    );
 
     expect(summary.totalTrades, 2);
     expect(summary.totalPnL, 5);

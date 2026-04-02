@@ -6,9 +6,12 @@ import '../models/risk_settings.dart';
 import '../models/position.dart';
 import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
+import '../models/order_book_snapshot.dart';
+import '../models/protection_status.dart';
 import '../models/strategy_console_entry.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
+import '../services/order_book_analyzer.dart';
 import '../services/trade_history_service.dart';
 import 'strategy.dart';
 
@@ -19,9 +22,11 @@ class TradingEngine {
   final TradingStrategy strategy;
   final RiskSettings riskSettings;
   final String symbol;
+  final List<String> trackedSymbols;
 
   List<Kline> _klines = [];
   List<Trade> _trades = [];
+  List<Trade> _accountTrades = [];
   List<PendingManualOrder> _pendingManualOrders = [];
   List<StrategyConsoleEntry> _consoleEntries = [];
   bool _isAutoTradingEnabled = false;
@@ -36,6 +41,15 @@ class TradingEngine {
   DateTime? _lastMessageAt;
   int? _lastLatencyMs;
   BinanceAccountStatus _binanceAccountStatus;
+  double? _walletBalance;
+  double? _availableBalance;
+  int? _openPositionCount;
+  OrderBookSnapshot? _orderBookSnapshot;
+  DateTime? _orderBookSyncedAt;
+  DateTime? _cooldownUntil;
+  DateTime? _protectionLockUntil;
+  String? _protectionLockReason;
+  ProtectionStatus _protectionStatus = const ProtectionStatus.ready();
   TradingSignal? _lastSignal;
   StrategyTradePlan? _lastDecisionPlan;
   String? _lastLoggedPlanFingerprint;
@@ -43,7 +57,9 @@ class TradingEngine {
 
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
+  final _accountTradeController = StreamController<List<Trade>>.broadcast();
   final _positionController = StreamController<Position?>.broadcast();
+  final _protectionController = StreamController<ProtectionStatus>.broadcast();
   final _connectionController = StreamController<ConnectionStatus>.broadcast();
   final _binanceAccountController =
       StreamController<BinanceAccountStatus>.broadcast();
@@ -57,7 +73,10 @@ class TradingEngine {
 
   Stream<List<Kline>> get klineStream => _klineController.stream;
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
+  Stream<List<Trade>> get accountTradeStream => _accountTradeController.stream;
   Stream<Position?> get positionStream => _positionController.stream;
+  Stream<ProtectionStatus> get protectionStatusStream =>
+      _protectionController.stream;
   Stream<ConnectionStatus> get connectionStream => _connectionController.stream;
   Stream<BinanceAccountStatus> get binanceAccountStatusStream =>
       _binanceAccountController.stream;
@@ -76,9 +95,11 @@ class TradingEngine {
     required this.strategy,
     required this.riskSettings,
     required this.symbol,
+    List<String> trackedSymbols = const [],
   }) : _binanceAccountStatus = BinanceAccountStatus.notConfigured(
          isTestnet: apiService.isTestnet,
-       );
+       ),
+       trackedSymbols = _normalizeTrackedSymbols(symbol, trackedSymbols);
 
   bool get isStreaming => _isStreaming;
   bool get isTradingEnabled => _isAutoTradingEnabled;
@@ -86,6 +107,11 @@ class TradingEngine {
   Position? get openPosition => _openPosition;
   List<Kline> get klines => _klines;
   List<Trade> get trades => _trades;
+  List<Trade> get accountTrades => List.unmodifiable(_accountTrades);
+  double? get walletBalance => _walletBalance;
+  double? get availableBalance => _availableBalance;
+  int? get openPositionCount => _openPositionCount;
+  ProtectionStatus get lastProtectionStatus => _protectionStatus;
   List<PendingManualOrder> get pendingManualOrders =>
       List.unmodifiable(_pendingManualOrders);
   List<StrategyConsoleEntry> get consoleEntries =>
@@ -103,13 +129,15 @@ class TradingEngine {
     _signalController.add(_lastSignal);
     _decisionPlanController.add(_lastDecisionPlan);
     _consoleLogController.add(consoleEntries);
+    _accountTradeController.add(accountTrades);
+    _protectionController.add(_protectionStatus);
     _emitPendingOrders();
     _emitBinanceAccountStatus(
       apiService.hasCredentials
           ? BinanceAccountStatus.checking(
               isTestnet: apiService.isTestnet,
               message:
-                  'Checking ${apiService.isTestnet ? 'Binance testnet' : 'Binance live'} account sync...',
+                  'Checking ${apiService.isTestnet ? 'Binance demo' : 'Binance live'} account sync...',
             )
           : BinanceAccountStatus.notConfigured(
               isTestnet: apiService.isTestnet,
@@ -122,8 +150,10 @@ class TradingEngine {
       final syncedExchangeState = await _loadInitialAccountState();
       if (!syncedExchangeState) {
         _trades = [];
+        _accountTrades = [];
         _openPosition = null;
         _tradeController.add(_trades);
+        _accountTradeController.add(_accountTrades);
         _positionController.add(_openPosition);
       }
     } else {
@@ -225,6 +255,7 @@ class TradingEngine {
 
   Future<void> _evaluateStrategy() async {
     try {
+      await _refreshOrderBookContextIfNeeded();
       StrategyTradePlan? plan;
       final strategyCandidate = strategy;
       late final TradingSignal signal;
@@ -233,6 +264,18 @@ class TradingEngine {
           _klines,
           symbol: symbol,
           riskSettings: riskSettings,
+          context: StrategyAnalysisContext(
+            openPosition: _openPosition,
+            symbolTrades: List<Trade>.unmodifiable(_trades),
+            accountTrades: List<Trade>.unmodifiable(_accountTrades),
+            walletBalance: _walletBalance,
+            availableBalance: _availableBalance,
+            openPositionCount: _openPositionCount,
+            accountSyncedAt: _binanceAccountStatus.lastSyncedAt,
+            accountStatusMessage: _binanceAccountStatus.message,
+            orderBookSnapshot: _orderBookSnapshot,
+            orderBookSyncedAt: _orderBookSyncedAt,
+          ),
         );
         signal = plan.signal;
       } else {
@@ -526,6 +569,27 @@ class TradingEngine {
     }
 
     final currentPrice = _klines.last.close;
+    final protectionMessage = _activeProtectionMessage();
+    if (reason == 'strategy' && protectionMessage != null) {
+      if (_openPosition != null && _openPosition!.side != desiredSide) {
+        _logExecutionBlocked(
+          'Protection engine is active: $protectionMessage Closing the current position without opening a reversal.',
+        );
+        _closePosition(
+          currentPrice,
+          'protection_flatten',
+          orderType: plan?.orderType,
+          requestedPrice: plan?.targetEntryPrice,
+        );
+        return;
+      }
+
+      _logExecutionBlocked(
+        'Protection engine is active: $protectionMessage New auto entries are paused.',
+      );
+      return;
+    }
+
     final quantity = riskSettings.tradeQuantity;
 
     if (quantity <= 0) {
@@ -672,6 +736,7 @@ class TradingEngine {
     _trades.add(trade);
     _tradeController.add(_trades);
     tradeHistoryService.saveTrades(symbol, _trades);
+    _applyExitProtections(trade);
     final remainingQuantity = position.quantity - closeQuantity;
     _openPosition = remainingQuantity <= 0
         ? null
@@ -738,7 +803,9 @@ class TradingEngine {
   void dispose() {
     _klineController.close();
     _tradeController.close();
+    _accountTradeController.close();
     _positionController.close();
+    _protectionController.close();
     _connectionController.close();
     _binanceAccountController.close();
     _signalController.close();
@@ -822,6 +889,14 @@ class TradingEngine {
   Future<void> clearTrades() async {
     _trades = [];
     _tradeController.add(_trades);
+    _cooldownUntil = null;
+    _protectionLockUntil = null;
+    _protectionLockReason = null;
+    _emitProtectionStatus(
+      const ProtectionStatus.ready(
+        message: 'Protection engine is clear. Auto entries are allowed.',
+      ),
+    );
     await tradeHistoryService.clearTrades(symbol);
   }
 
@@ -835,18 +910,56 @@ class TradingEngine {
 
   void _startExchangeSyncTimer() {
     _exchangeSyncTimer?.cancel();
-    if (!apiService.hasCredentials) {
-      return;
-    }
-
     _exchangeSyncTimer = Timer.periodic(const Duration(seconds: 12), (_) {
-      unawaited(_syncExchangeState());
+      unawaited(_refreshOrderBookContextIfNeeded());
+      if (apiService.hasCredentials) {
+        unawaited(_syncExchangeState());
+      }
     });
   }
 
   void _stopExchangeSyncTimer() {
     _exchangeSyncTimer?.cancel();
     _exchangeSyncTimer = null;
+  }
+
+  Future<void> _refreshOrderBookContextIfNeeded({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force &&
+        _orderBookSyncedAt != null &&
+        now.difference(_orderBookSyncedAt!) < const Duration(minutes: 1)) {
+      return;
+    }
+
+    try {
+      final payload = await apiService.getOrderBook(symbol: symbol, limit: 20);
+      final snapshot = OrderBookAnalyzer.analyze(
+        payload,
+        plannedQuantity: riskSettings.tradeQuantity,
+        capturedAt: now,
+      );
+      final previousCapturedAt = _orderBookSyncedAt;
+      _orderBookSnapshot = snapshot;
+      _orderBookSyncedAt = now;
+
+      if (previousCapturedAt == null ||
+          now.difference(previousCapturedAt) >= const Duration(minutes: 1)) {
+        _logConsole(
+          'Order book updated: spread ${snapshot.spreadPercent?.toStringAsFixed(4) ?? '--'}%, '
+          'imbalance ${snapshot.imbalancePercent.toStringAsFixed(1)}%, '
+          'buy slip ${snapshot.estimatedBuySlippagePercent?.toStringAsFixed(4) ?? '--'}%, '
+          'sell slip ${snapshot.estimatedSellSlippagePercent?.toStringAsFixed(4) ?? '--'}%. '
+          '${snapshot.executionHint}.',
+        );
+      }
+    } catch (e) {
+      if (_orderBookSnapshot == null) {
+        _logConsole(
+          'Order book snapshot unavailable: $e',
+          level: StrategyConsoleLevel.warning,
+        );
+      }
+    }
   }
 
   Future<bool> _syncExchangeState({bool logSuccess = false}) async {
@@ -861,34 +974,69 @@ class TradingEngine {
     }
 
     try {
-      final results = await Future.wait([
+      final results = await Future.wait<dynamic>([
         apiService.getPositionRisk(symbol: symbol),
-        apiService.getUserTrades(symbol: symbol, limit: 100),
+        apiService.getAccountInfo(),
+        ...trackedSymbols.map(
+          (trackedSymbol) =>
+              apiService.getUserTrades(symbol: trackedSymbol, limit: 100),
+        ),
       ]);
 
       final syncedPosition = _parseExchangePosition(
-        results[0] as List<dynamic>,
+        results.first as List<dynamic>,
       );
-      final syncedTrades = _parseExchangeTrades(results[1] as List<dynamic>);
+      final accountSummary = _parseExchangeAccountSummary(
+        results[1] as Map<String, dynamic>,
+      );
+      final groupedTrades = <String, List<Trade>>{};
+      for (var i = 0; i < trackedSymbols.length; i++) {
+        final trackedSymbol = trackedSymbols[i];
+        groupedTrades[trackedSymbol] = _parseExchangeTrades(
+          results[i + 2] as List<dynamic>,
+          symbolFilter: trackedSymbol,
+        );
+      }
+      final normalizedSymbol = symbol.toUpperCase();
+      final syncedTrades = groupedTrades[normalizedSymbol] ?? const <Trade>[];
+      final syncedAccountTrades =
+          groupedTrades.values.expand((trades) => trades).toList()
+            ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
       final positionChanged = !_samePosition(_openPosition, syncedPosition);
       final tradesChanged = !_sameTrades(_trades, syncedTrades);
+      final accountTradesChanged = !_sameTrades(
+        _accountTrades,
+        syncedAccountTrades,
+      );
 
       _openPosition = syncedPosition;
       _trades = syncedTrades;
+      _accountTrades = syncedAccountTrades;
+      _walletBalance = accountSummary.walletBalance;
+      _availableBalance = accountSummary.availableBalance;
+      _openPositionCount = accountSummary.openPositionCount;
       _lastExecutionBlockFingerprint = null;
       _positionController.add(_openPosition);
       _tradeController.add(_trades);
-      await tradeHistoryService.saveTrades(symbol, _trades);
+      _accountTradeController.add(_accountTrades);
+      _restoreProtectionWindowsFromTrades();
+      await Future.wait([
+        for (final entry in groupedTrades.entries)
+          tradeHistoryService.saveTrades(entry.key, entry.value),
+      ]);
 
-      if (logSuccess || positionChanged || tradesChanged) {
+      if (logSuccess ||
+          positionChanged ||
+          tradesChanged ||
+          accountTradesChanged) {
         final positionLabel = _openPosition == null
             ? 'no open position'
             : '${_openPosition!.isLong ? 'LONG' : 'SHORT'} '
                   '${_formatQuantity(_openPosition!.quantity)} @ '
                   '${_openPosition!.entryPrice.toStringAsFixed(_openPosition!.entryPrice >= 100 ? 2 : 6)}';
         _logConsole(
-          'Synced Binance account state: ${_trades.length} live fills, $positionLabel.',
+          'Synced Binance account state: ${_trades.length} ${symbol.toUpperCase()} fills, ${_accountTrades.length} tracked fills total, $positionLabel. Wallet ${_walletBalance?.toStringAsFixed(2) ?? '--'} USDT, available ${_availableBalance?.toStringAsFixed(2) ?? '--'} USDT.',
           level: StrategyConsoleLevel.success,
         );
       }
@@ -897,11 +1045,26 @@ class TradingEngine {
           isTestnet: apiService.isTestnet,
           lastSyncedAt: DateTime.now(),
           message:
-              '${apiService.isTestnet ? 'Binance testnet' : 'Binance live'} account sync is active.',
+              '${apiService.isTestnet ? 'Binance demo' : 'Binance live'} account sync is active.',
         ),
       );
       return true;
     } catch (e) {
+      final limitedMessage = await _buildLimitedExchangeAccessMessage(e);
+      if (limitedMessage != null) {
+        _emitBinanceAccountStatus(
+          BinanceAccountStatus.limited(
+            isTestnet: apiService.isTestnet,
+            lastSyncedAt: _binanceAccountStatus.lastSyncedAt,
+            message: limitedMessage,
+          ),
+        );
+        if (logSuccess) {
+          _logConsole(limitedMessage, level: StrategyConsoleLevel.warning);
+        }
+        return false;
+      }
+
       _emitBinanceAccountStatus(
         BinanceAccountStatus.attentionRequired(
           isTestnet: apiService.isTestnet,
@@ -919,15 +1082,67 @@ class TradingEngine {
     }
   }
 
+  Future<String?> _buildLimitedExchangeAccessMessage(Object error) async {
+    if (apiService.isTestnet || error is! BinanceApiException) {
+      return null;
+    }
+
+    final isPermissionStyleFailure =
+        error.errorCode == -2015 ||
+        error.errorCode == -2014 ||
+        error.body.contains('-2015') ||
+        error.body.contains('-2014');
+    if (!isPermissionStyleFailure) {
+      return null;
+    }
+
+    try {
+      await apiService.syncServerTime(scope: BinanceApiScope.spot);
+      final spotAccountInfo = await apiService.getSpotAccountInfo();
+      Map<String, dynamic>? spotRestrictions;
+      try {
+        spotRestrictions = await apiService.getSpotApiRestrictions();
+      } catch (_) {
+        // A successful spot account call is enough to prove the key works.
+      }
+
+      final balances = spotAccountInfo['balances'];
+      final fundedAssetCount = balances is List
+          ? balances.where((item) {
+              if (item is! Map) return false;
+              final free = double.tryParse('${item['free'] ?? 0}') ?? 0;
+              final locked = double.tryParse('${item['locked'] ?? 0}') ?? 0;
+              return free != 0 || locked != 0;
+            }).length
+          : 0;
+
+      final futuresEnabled = spotRestrictions?['enableFutures'];
+      final futuresFlagNote = futuresEnabled is bool
+          ? futuresEnabled
+                ? ' Binance reports Futures permission is enabled on the key.'
+                : ' Binance reports Futures permission is disabled on the key.'
+          : '';
+
+      return 'Spot read access is valid, so the key and secret are at least partially working. '
+          '${fundedAssetCount > 0 ? 'Spot returned $fundedAssetCount funded asset${fundedAssetCount == 1 ? '' : 's'}. ' : 'Spot returned no funded assets. '}'
+          'The dashboard is blocked specifically on Binance Futures sync for this app.$futuresFlagNote';
+    } catch (_) {
+      return null;
+    }
+  }
+
   String _friendlyExchangeSyncError(Object error) {
     if (error is BinanceApiException) {
-      if (error.body.contains('-1022')) {
+      if (error.errorCode == -1022 || error.body.contains('-1022')) {
         return 'Binance account sync failed: invalid API signature. Re-enter the Binance API secret or create a fresh key pair for this app.';
       }
-      if (error.body.contains('-1021')) {
+      if (error.errorCode == -1021 || error.body.contains('-1021')) {
         return 'Binance account sync failed because this machine clock is ahead of Binance server time. The app is retrying with server time.';
       }
-      if (error.body.contains('-2015') || error.body.contains('-2014')) {
+      if (error.errorCode == -2015 ||
+          error.errorCode == -2014 ||
+          error.body.contains('-2015') ||
+          error.body.contains('-2014')) {
         final requestIp = _extractRequestIp(error.body);
         final requestIpText = requestIp == null
             ? ''
@@ -1151,11 +1366,245 @@ class TradingEngine {
       final persisted = await tradeHistoryService.loadTrades(symbol);
       if (persisted.isNotEmpty) {
         _trades = persisted;
+        _accountTrades = persisted;
         _tradeController.add(_trades);
+        _accountTradeController.add(_accountTrades);
       }
+      _restoreProtectionWindowsFromTrades();
     } catch (e) {
       print('Failed to load trade history: $e');
     }
+  }
+
+  void _restoreProtectionWindowsFromTrades() {
+    _cooldownUntil = null;
+    _protectionLockUntil = null;
+    _protectionLockReason = null;
+
+    if (_trades.isEmpty) {
+      _emitProtectionStatus(const ProtectionStatus.ready());
+      return;
+    }
+
+    final exits = _realizedExitTrades(_trades);
+    if (exits.isEmpty) {
+      _updateProtectionStatus();
+      return;
+    }
+
+    if (exits.isNotEmpty && riskSettings.hasCooldown) {
+      final latestExit = exits.last;
+      final cooldownUntil = latestExit.timestamp.add(
+        Duration(minutes: riskSettings.cooldownMinutes),
+      );
+      if (cooldownUntil.isAfter(DateTime.now())) {
+        _cooldownUntil = cooldownUntil;
+      }
+    }
+
+    final pauseDuration = Duration(
+      minutes: riskSettings.protectionPauseMinutes,
+    );
+    var consecutiveLosses = 0;
+    var cumulativePnl = 0.0;
+    var peakPnl = 0.0;
+
+    for (final exit in exits) {
+      final pnl = exit.realizedPnl ?? 0;
+
+      if (pnl < 0) {
+        consecutiveLosses += 1;
+      } else {
+        consecutiveLosses = 0;
+      }
+
+      cumulativePnl += pnl;
+      if (cumulativePnl > peakPnl) {
+        peakPnl = cumulativePnl;
+      }
+
+      if (riskSettings.hasLossStreakProtection &&
+          pnl < 0 &&
+          consecutiveLosses >= riskSettings.maxConsecutiveLosses) {
+        final lockUntil = exit.timestamp.add(pauseDuration);
+        if (lockUntil.isAfter(DateTime.now())) {
+          _protectionLockUntil = lockUntil;
+          _protectionLockReason =
+              'Loss streak lock: ${riskSettings.maxConsecutiveLosses} consecutive losses reached.';
+        }
+      }
+
+      final drawdownPercent = peakPnl <= 0
+          ? 0.0
+          : ((peakPnl - cumulativePnl) / peakPnl) * 100;
+      if (riskSettings.hasDrawdownProtection &&
+          drawdownPercent >= riskSettings.maxDrawdownPercent) {
+        final lockUntil = exit.timestamp.add(pauseDuration);
+        if (lockUntil.isAfter(DateTime.now())) {
+          _protectionLockUntil = lockUntil;
+          _protectionLockReason =
+              'Drawdown lock: realized drawdown reached ${drawdownPercent.toStringAsFixed(1)}% (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
+        }
+      }
+    }
+
+    _updateProtectionStatus();
+  }
+
+  List<Trade> _realizedExitTrades(List<Trade> trades) {
+    return trades
+        .where((trade) => trade.kind == 'EXIT' && trade.realizedPnl != null)
+        .toList()
+      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+  }
+
+  int _consecutiveLossCount() {
+    final exits = _realizedExitTrades(_trades);
+    var losses = 0;
+    for (final trade in exits.reversed) {
+      if ((trade.realizedPnl ?? 0) < 0) {
+        losses += 1;
+      } else {
+        break;
+      }
+    }
+    return losses;
+  }
+
+  double _currentRealizedDrawdownPercent() {
+    final exits = _realizedExitTrades(_trades);
+    if (exits.isEmpty) {
+      return 0;
+    }
+
+    var cumulativePnl = 0.0;
+    var peakPnl = 0.0;
+    for (final trade in exits) {
+      cumulativePnl += trade.realizedPnl ?? 0;
+      if (cumulativePnl > peakPnl) {
+        peakPnl = cumulativePnl;
+      }
+    }
+
+    if (peakPnl <= 0) {
+      return 0;
+    }
+
+    return ((peakPnl - cumulativePnl) / peakPnl) * 100;
+  }
+
+  void _applyExitProtections(Trade exitTrade) {
+    if (riskSettings.hasCooldown) {
+      _cooldownUntil = exitTrade.timestamp.add(
+        Duration(minutes: riskSettings.cooldownMinutes),
+      );
+    }
+
+    final pauseDuration = Duration(
+      minutes: riskSettings.protectionPauseMinutes,
+    );
+    if (riskSettings.hasLossStreakProtection &&
+        _consecutiveLossCount() >= riskSettings.maxConsecutiveLosses &&
+        (exitTrade.realizedPnl ?? 0) < 0) {
+      _protectionLockUntil = exitTrade.timestamp.add(pauseDuration);
+      _protectionLockReason =
+          'Loss streak lock: ${riskSettings.maxConsecutiveLosses} consecutive losses reached.';
+      _logConsole(_protectionLockReason!, level: StrategyConsoleLevel.warning);
+    }
+
+    final currentDrawdown = _currentRealizedDrawdownPercent();
+    if (riskSettings.hasDrawdownProtection &&
+        currentDrawdown >= riskSettings.maxDrawdownPercent) {
+      _protectionLockUntil = exitTrade.timestamp.add(pauseDuration);
+      _protectionLockReason =
+          'Drawdown lock: realized drawdown reached ${currentDrawdown.toStringAsFixed(1)}% (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
+      _logConsole(_protectionLockReason!, level: StrategyConsoleLevel.warning);
+    }
+
+    _updateProtectionStatus(now: exitTrade.timestamp);
+  }
+
+  String? _activeProtectionMessage() {
+    _updateProtectionStatus();
+    return _protectionStatus.isBlocking ? _protectionStatus.message : null;
+  }
+
+  void _updateProtectionStatus({DateTime? now}) {
+    final currentTime = now ?? DateTime.now();
+
+    if (_cooldownUntil != null && !_cooldownUntil!.isAfter(currentTime)) {
+      _cooldownUntil = null;
+    }
+    if (_protectionLockUntil != null &&
+        !_protectionLockUntil!.isAfter(currentTime)) {
+      _protectionLockUntil = null;
+      _protectionLockReason = null;
+    }
+
+    if (_protectionLockUntil != null) {
+      _emitProtectionStatus(
+        ProtectionStatus.locked(
+          until: _protectionLockUntil!,
+          message:
+              '${_protectionLockReason ?? 'Protection lock active.'} Trading resumes at ${_formatProtectionTime(_protectionLockUntil!)}.',
+        ),
+      );
+      return;
+    }
+
+    if (_cooldownUntil != null) {
+      _emitProtectionStatus(
+        ProtectionStatus.cooldown(
+          until: _cooldownUntil!,
+          message:
+              'Cooldown active until ${_formatProtectionTime(_cooldownUntil!)}.',
+        ),
+      );
+      return;
+    }
+
+    _emitProtectionStatus(
+      const ProtectionStatus.ready(
+        message: 'Protection engine is clear. Auto entries are allowed.',
+      ),
+    );
+  }
+
+  void _emitProtectionStatus(ProtectionStatus status) {
+    _protectionStatus = status;
+    if (_protectionController.isClosed) {
+      return;
+    }
+    _protectionController.add(status);
+  }
+
+  String _formatProtectionTime(DateTime value) {
+    final local = value.toLocal();
+    final hour = local.hour % 12 == 0 ? 12 : local.hour % 12;
+    final minute = local.minute.toString().padLeft(2, '0');
+    final suffix = local.hour >= 12 ? 'PM' : 'AM';
+    return '$hour:$minute $suffix';
+  }
+
+  _ExchangeAccountSummary _parseExchangeAccountSummary(
+    Map<String, dynamic> payload,
+  ) {
+    final positions = payload['positions'];
+    final openPositionCount = positions is List
+        ? positions.where((item) {
+            if (item is! Map) {
+              return false;
+            }
+            final amount = _asDouble(item['positionAmt']);
+            return amount != null && amount.abs() > 0.0000001;
+          }).length
+        : null;
+
+    return _ExchangeAccountSummary(
+      walletBalance: _asDouble(payload['totalWalletBalance']),
+      availableBalance: _asDouble(payload['availableBalance']),
+      openPositionCount: openPositionCount,
+    );
   }
 
   Position? _parseExchangePosition(List<dynamic> payload) {
@@ -1192,8 +1641,14 @@ class TradingEngine {
     return null;
   }
 
-  List<Trade> _parseExchangeTrades(List<dynamic> payload) {
+  List<Trade> _parseExchangeTrades(
+    List<dynamic> payload, {
+    String? symbolFilter,
+  }) {
     final trades = <Trade>[];
+    final normalizedSymbolFilter = symbolFilter == null
+        ? null
+        : symbolFilter.toUpperCase();
 
     for (final item in payload) {
       if (item is! Map) {
@@ -1201,7 +1656,9 @@ class TradingEngine {
       }
 
       final symbolValue = item['symbol']?.toString().toUpperCase();
-      if (symbolValue != symbol.toUpperCase()) {
+      if (symbolValue == null ||
+          (normalizedSymbolFilter != null &&
+              symbolValue != normalizedSymbolFilter)) {
         continue;
       }
 
@@ -1224,7 +1681,7 @@ class TradingEngine {
 
       trades.add(
         Trade(
-          symbol: symbol,
+          symbol: symbolValue,
           side: side,
           price: price,
           quantity: quantity,
@@ -1244,6 +1701,21 @@ class TradingEngine {
 
     trades.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return trades;
+  }
+
+  static List<String> _normalizeTrackedSymbols(
+    String currentSymbol,
+    List<String> trackedSymbols,
+  ) {
+    final normalized = <String>{currentSymbol.toUpperCase()};
+    for (final symbol in trackedSymbols) {
+      final value = symbol.trim().toUpperCase();
+      if (value.isEmpty) {
+        continue;
+      }
+      normalized.add(value);
+    }
+    return normalized.toList(growable: false);
   }
 
   bool _samePosition(Position? a, Position? b) {
@@ -1402,4 +1874,16 @@ class TradingEngine {
     }
     return int.tryParse(value.toString());
   }
+}
+
+class _ExchangeAccountSummary {
+  final double? walletBalance;
+  final double? availableBalance;
+  final int? openPositionCount;
+
+  const _ExchangeAccountSummary({
+    this.walletBalance,
+    this.availableBalance,
+    this.openPositionCount,
+  });
 }

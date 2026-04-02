@@ -21,7 +21,11 @@ class PerformanceMetrics extends ConsumerWidget {
         children: [
           Row(
             children: [
-              const Icon(Icons.analytics, color: AppColors.textSecondary, size: 20),
+              const Icon(
+                Icons.analytics,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Performance Metrics',
@@ -34,9 +38,14 @@ class PerformanceMetrics extends ConsumerWidget {
               const Spacer(),
               trades.when(
                 data: (tradeList) {
-                  final summary = PerformanceSummaryCalculator.calculate(tradeList);
+                  final summary = PerformanceSummaryCalculator.calculate(
+                    tradeList,
+                  );
                   return Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 4,
+                    ),
                     decoration: BoxDecoration(
                       color: _getOverallPerformanceColor(summary),
                       borderRadius: BorderRadius.circular(12),
@@ -119,13 +128,19 @@ class PerformanceMetrics extends ConsumerWidget {
               title: 'Win Rate',
               value: '${summary.winRate.toStringAsFixed(0)}%',
               icon: Icons.trending_up,
-              color: summary.winRate >= 50 ? AppColors.positive : AppColors.negative,
+              color: summary.winRate >= 50
+                  ? AppColors.positive
+                  : AppColors.negative,
             ),
             _MetricTile(
               title: 'Total P&L',
               value: '\$${summary.totalPnL.toStringAsFixed(4)}',
-              icon: summary.totalPnL >= 0 ? Icons.arrow_upward : Icons.arrow_downward,
-              color: summary.totalPnL >= 0 ? AppColors.positive : AppColors.negative,
+              icon: summary.totalPnL >= 0
+                  ? Icons.arrow_upward
+                  : Icons.arrow_downward,
+              color: summary.totalPnL >= 0
+                  ? AppColors.positive
+                  : AppColors.negative,
             ),
             _MetricTile(
               title: 'Best Trade',
@@ -155,7 +170,9 @@ class PerformanceMetrics extends ConsumerWidget {
               title: 'Profit Factor',
               value: _formatProfitFactor(summary.profitFactor),
               icon: Icons.score,
-              color: summary.profitFactor >= 1.5 ? AppColors.positive : AppColors.negative,
+              color: summary.profitFactor >= 1.5
+                  ? AppColors.positive
+                  : AppColors.negative,
             ),
           ],
         );
@@ -165,8 +182,10 @@ class PerformanceMetrics extends ConsumerWidget {
 
   Color _getOverallPerformanceColor(PerformanceSummary summary) {
     if (summary.totalTrades == 0) return AppColors.textMuted;
-    if (summary.winRate >= 60 && summary.totalPnL > 0) return AppColors.positive;
-    if (summary.winRate >= 50 && summary.totalPnL > 0) return AppColors.glowCyan;
+    if (summary.winRate >= 60 && summary.totalPnL > 0)
+      return AppColors.positive;
+    if (summary.winRate >= 50 && summary.totalPnL > 0)
+      return AppColors.glowCyan;
     if (summary.winRate >= 40) return AppColors.warning;
     return AppColors.negative;
   }

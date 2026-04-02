@@ -1,17 +1,14 @@
 import 'package:intl/intl.dart';
 
-enum PriceAlertDirection {
-  above,
-  below,
-}
+enum PriceAlertDirection { above, below }
 
 const Object _unset = Object();
 
 extension PriceAlertDirectionX on PriceAlertDirection {
   String get label => switch (this) {
-        PriceAlertDirection.above => 'Above',
-        PriceAlertDirection.below => 'Below',
-      };
+    PriceAlertDirection.above => 'Above',
+    PriceAlertDirection.below => 'Below',
+  };
 }
 
 class PriceAlert {
@@ -45,17 +42,11 @@ class PriceAlert {
   }
 
   PriceAlert trigger(DateTime timestamp) {
-    return copyWith(
-      enabled: false,
-      triggeredAt: timestamp,
-    );
+    return copyWith(enabled: false, triggeredAt: timestamp);
   }
 
   PriceAlert rearm() {
-    return copyWith(
-      enabled: true,
-      triggeredAt: null,
-    );
+    return copyWith(enabled: true, triggeredAt: null);
   }
 
   PriceAlert copyWith({
@@ -74,7 +65,9 @@ class PriceAlert {
       threshold: threshold ?? this.threshold,
       createdAt: createdAt ?? this.createdAt,
       enabled: enabled ?? this.enabled,
-      triggeredAt: identical(triggeredAt, _unset) ? this.triggeredAt : triggeredAt as DateTime?,
+      triggeredAt: identical(triggeredAt, _unset)
+          ? this.triggeredAt
+          : triggeredAt as DateTime?,
     );
   }
 
@@ -97,11 +90,15 @@ class PriceAlert {
         : PriceAlertDirection.above;
 
     return PriceAlert(
-      id: json['id']?.toString() ?? DateTime.now().microsecondsSinceEpoch.toString(),
+      id:
+          json['id']?.toString() ??
+          DateTime.now().microsecondsSinceEpoch.toString(),
       symbol: json['symbol']?.toString() ?? '',
       direction: direction,
       threshold: double.tryParse(json['threshold']?.toString() ?? '') ?? 0,
-      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ?? DateTime.now(),
+      createdAt:
+          DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
       enabled: json['enabled'] as bool? ?? true,
       triggeredAt: DateTime.tryParse(json['triggeredAt']?.toString() ?? ''),
     );

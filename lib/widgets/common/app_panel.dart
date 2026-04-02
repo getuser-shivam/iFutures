@@ -24,7 +24,9 @@ class AppPanel extends StatelessWidget {
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: (accent ?? AppColors.border).withOpacity(0.6)),
+        border: Border.all(
+          color: (accent ?? AppColors.border).withOpacity(0.6),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.35),

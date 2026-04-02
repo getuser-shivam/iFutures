@@ -15,6 +15,12 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
 
   final List<Map<String, String>> _screenshots = [
     {
+      'path': 'assets/screenshots/screenshot_app_v1.0.8.png',
+      'title': 'Version 1.0.8 - AI Trade Intelligence',
+      'description':
+          'Latest: protection engine, access verification, and order-book-aware AI execution',
+    },
+    {
       'path': 'assets/screenshots/screenshot_app_v1.0.7.png',
       'title': 'Version 1.0.7 - Market Analysis',
       'description': 'Latest: live BTC/ETH/BNB/SOL pulse and crypto news',

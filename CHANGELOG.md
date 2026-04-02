@@ -2,6 +2,26 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.8] - 2026-04-02
+### Added
+- Protection engine controls with cooldown, pause-window, loss-streak, and drawdown locks.
+- AI context analysis that scores market regime, portfolio posture, and recent trade quality before sizing a plan.
+- Multi-timeframe AI alignment using local `1m`, `5m`, and `15m` structure in the prompt and strategy console.
+- Binance order-book execution context with spread, imbalance, estimated sweep cost, and execution hints.
+- AI API verification and runtime health status alongside the Binance connection flow.
+- Tracked-account trade history fallback and a bounded inner scroll for larger history sets.
+- App gallery milestone for the `1.0.8` release.
+
+### Changed
+- Reorganized the dashboard header to surface live price, exchange status, and strategy status in a tighter top bar.
+- Reworked Binance settings terminology to use `Live Connection`, `Demo Connection`, and clearer verify/apply actions.
+- Refreshed README, TODO, changelog, and app gallery metadata to match the current app state.
+
+### Fixed
+- Separated spot-read verification from futures-access verification so valid read-only keys no longer look like broken credentials.
+- Improved runtime Binance status handling so verified settings and running-app state are easier to distinguish.
+- Ensured live Binance sync prefers real account data over stale simulated history when credentials are configured.
+
 ## [1.0.7] - 2026-03-20
 ### Added
 - Market analysis dashboard card for BTC, ETH, BNB, and SOL.

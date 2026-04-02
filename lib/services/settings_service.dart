@@ -23,6 +23,10 @@ class SettingsService {
   static const _riskTakeProfit = 'risk_take_profit_percent';
   static const _riskTradeQuantity = 'risk_trade_quantity';
   static const _riskLeverage = 'risk_trade_leverage';
+  static const _riskCooldownMinutes = 'risk_cooldown_minutes';
+  static const _riskProtectionPauseMinutes = 'risk_protection_pause_minutes';
+  static const _riskMaxConsecutiveLosses = 'risk_max_consecutive_losses';
+  static const _riskMaxDrawdownPercent = 'risk_max_drawdown_percent';
   static const _rsiPeriod = 'strategy_rsi_period';
   static const _rsiOverbought = 'strategy_rsi_overbought';
   static const _rsiOversold = 'strategy_rsi_oversold';
@@ -147,6 +151,33 @@ class SettingsService {
   Future<void> setRiskLeverage(int value) async {
     await init();
     await _prefs?.setInt(_riskLeverage, value);
+  }
+
+  int getRiskCooldownMinutes() => _prefs?.getInt(_riskCooldownMinutes) ?? 0;
+  Future<void> setRiskCooldownMinutes(int value) async {
+    await init();
+    await _prefs?.setInt(_riskCooldownMinutes, value);
+  }
+
+  int getRiskProtectionPauseMinutes() =>
+      _prefs?.getInt(_riskProtectionPauseMinutes) ?? 30;
+  Future<void> setRiskProtectionPauseMinutes(int value) async {
+    await init();
+    await _prefs?.setInt(_riskProtectionPauseMinutes, value);
+  }
+
+  int getRiskMaxConsecutiveLosses() =>
+      _prefs?.getInt(_riskMaxConsecutiveLosses) ?? 0;
+  Future<void> setRiskMaxConsecutiveLosses(int value) async {
+    await init();
+    await _prefs?.setInt(_riskMaxConsecutiveLosses, value);
+  }
+
+  double getRiskMaxDrawdownPercent() =>
+      _prefs?.getDouble(_riskMaxDrawdownPercent) ?? 0.0;
+  Future<void> setRiskMaxDrawdownPercent(double value) async {
+    await init();
+    await _prefs?.setDouble(_riskMaxDrawdownPercent, value);
   }
 
   // RSI strategy tuning

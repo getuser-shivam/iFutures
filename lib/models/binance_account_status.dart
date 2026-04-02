@@ -1,4 +1,10 @@
-enum BinanceAccountState { notConfigured, checking, active, attentionRequired }
+enum BinanceAccountState {
+  notConfigured,
+  checking,
+  active,
+  limited,
+  attentionRequired,
+}
 
 class BinanceAccountStatus {
   final BinanceAccountState state;
@@ -28,6 +34,12 @@ class BinanceAccountStatus {
     required this.lastSyncedAt,
     this.message,
   }) : state = BinanceAccountState.active;
+
+  const BinanceAccountStatus.limited({
+    required this.isTestnet,
+    this.lastSyncedAt,
+    this.message,
+  }) : state = BinanceAccountState.limited;
 
   const BinanceAccountStatus.attentionRequired({
     required this.isTestnet,

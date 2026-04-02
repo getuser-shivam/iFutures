@@ -1,4 +1,4 @@
-﻿enum MarketConnectionState {
+enum MarketConnectionState {
   connecting,
   connected,
   stale,

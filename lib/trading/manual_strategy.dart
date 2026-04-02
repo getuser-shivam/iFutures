@@ -16,6 +16,7 @@ class ManualStrategy extends TradingStrategy implements TradePlanningStrategy {
     List<Kline> history, {
     String? symbol,
     RiskSettings? riskSettings,
+    StrategyAnalysisContext? context,
   }) async {
     return StrategyTradePlan.hold(
       strategyName: name,

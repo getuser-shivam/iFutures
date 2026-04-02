@@ -8,7 +8,7 @@ class TradeCsvExportService {
   final Directory Function()? _baseDirectoryResolver;
 
   TradeCsvExportService({Directory Function()? baseDirectoryResolver})
-      : _baseDirectoryResolver = baseDirectoryResolver;
+    : _baseDirectoryResolver = baseDirectoryResolver;
 
   Future<File> exportTrades({
     required String symbol,
@@ -29,7 +29,8 @@ class TradeCsvExportService {
   }
 
   Future<Directory> _resolveExportDirectory() async {
-    final baseDirectory = _baseDirectoryResolver?.call() ?? _defaultBaseDirectory();
+    final baseDirectory =
+        _baseDirectoryResolver?.call() ?? _defaultBaseDirectory();
     final exportDirectory = Directory(
       '${baseDirectory.path}${Platform.pathSeparator}iFutures${Platform.pathSeparator}exports',
     );
@@ -38,11 +39,10 @@ class TradeCsvExportService {
   }
 
   Directory _defaultBaseDirectory() {
-    final home = Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'];
+    final home =
+        Platform.environment['USERPROFILE'] ?? Platform.environment['HOME'];
     if (home != null && home.isNotEmpty) {
-      return Directory(
-        '$home${Platform.pathSeparator}Documents',
-      );
+      return Directory('$home${Platform.pathSeparator}Documents');
     }
 
     return Directory.current;
@@ -74,7 +74,10 @@ class TradeCsvExportService {
 
   String _csvField(Object? value) {
     final text = value?.toString() ?? '';
-    if (text.contains(',') || text.contains('"') || text.contains('\n') || text.contains('\r')) {
+    if (text.contains(',') ||
+        text.contains('"') ||
+        text.contains('\n') ||
+        text.contains('\r')) {
       return '"${text.replaceAll('"', '""')}"';
     }
     return text;

@@ -11,10 +11,7 @@ import '../common/app_toast.dart';
 class PriceAlertListener extends ConsumerWidget {
   final String symbol;
 
-  const PriceAlertListener({
-    super.key,
-    required this.symbol,
-  });
+  const PriceAlertListener({super.key, required this.symbol});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -45,10 +42,14 @@ class PriceAlertListener extends ConsumerWidget {
 
     ref.invalidate(priceAlertsProvider(symbol));
 
-    final summary = triggeredAlerts.map((alert) {
-      final direction = alert.direction == PriceAlertDirection.above ? 'above' : 'below';
-      return '${alert.symbol} $direction ${formatPriceValue(alert.threshold)}';
-    }).join(', ');
+    final summary = triggeredAlerts
+        .map((alert) {
+          final direction = alert.direction == PriceAlertDirection.above
+              ? 'above'
+              : 'below';
+          return '${alert.symbol} $direction ${formatPriceValue(alert.threshold)}';
+        })
+        .join(', ');
 
     showAppToast(
       context,

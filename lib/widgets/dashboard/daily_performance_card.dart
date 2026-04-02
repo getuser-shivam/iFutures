@@ -31,7 +31,11 @@ class DailyPerformanceCard extends ConsumerWidget {
             children: [
               Row(
                 children: [
-                  const Icon(Icons.today_outlined, color: AppColors.textSecondary, size: 20),
+                  const Icon(
+                    Icons.today_outlined,
+                    color: AppColors.textSecondary,
+                    size: 20,
+                  ),
                   const SizedBox(width: 8),
                   const Text(
                     'Daily Performance',
@@ -44,7 +48,9 @@ class DailyPerformanceCard extends ConsumerWidget {
                   const Spacer(),
                   StatusPill(
                     label: '${summary.totalTrades} trades',
-                    color: summary.hasData ? AppColors.glowCyan : AppColors.textMuted,
+                    color: summary.hasData
+                        ? AppColors.glowCyan
+                        : AppColors.textMuted,
                   ),
                 ],
               ),
@@ -74,8 +80,8 @@ class DailyPerformanceCard extends ConsumerWidget {
                     final crossAxisCount = constraints.maxWidth > 900
                         ? 3
                         : constraints.maxWidth > 600
-                            ? 2
-                            : 1;
+                        ? 2
+                        : 1;
 
                     return GridView.count(
                       crossAxisCount: crossAxisCount,
@@ -87,16 +93,23 @@ class DailyPerformanceCard extends ConsumerWidget {
                         _SummaryTile(
                           title: 'Daily P&L',
                           value: _formatPnl(summary.totalPnL),
-                          icon: summary.totalPnL >= 0 ? Icons.trending_up : Icons.trending_down,
-                          color: summary.totalPnL >= 0 ? AppColors.positive : AppColors.negative,
+                          icon: summary.totalPnL >= 0
+                              ? Icons.trending_up
+                              : Icons.trending_down,
+                          color: summary.totalPnL >= 0
+                              ? AppColors.positive
+                              : AppColors.negative,
                           helper: 'Realized today',
                         ),
                         _SummaryTile(
                           title: 'Win Rate',
                           value: '${summary.winRate.toStringAsFixed(0)}%',
                           icon: Icons.emoji_events_outlined,
-                          color: summary.winRate >= 50 ? AppColors.positive : AppColors.warning,
-                          helper: '${summary.winningTrades}/${summary.totalTrades} wins',
+                          color: summary.winRate >= 50
+                              ? AppColors.positive
+                              : AppColors.warning,
+                          helper:
+                              '${summary.winningTrades}/${summary.totalTrades} wins',
                         ),
                         _SummaryTile(
                           title: 'Drawdown',
@@ -113,9 +126,8 @@ class DailyPerformanceCard extends ConsumerWidget {
           ),
         );
       },
-      loading: () => const AppPanel(
-        child: Center(child: CircularProgressIndicator()),
-      ),
+      loading: () =>
+          const AppPanel(child: Center(child: CircularProgressIndicator())),
       error: (error, stack) => AppPanel(
         accent: AppColors.negative,
         child: Text(
@@ -166,7 +178,10 @@ class _SummaryTile extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: const TextStyle(color: AppColors.textSecondary, fontSize: 11),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                  ),
                 ),
               ),
             ],

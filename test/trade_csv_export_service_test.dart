@@ -6,7 +6,9 @@ import 'package:ifutures/services/trade_csv_export_service.dart';
 
 void main() {
   test('exports trades to a CSV file with escaped fields', () async {
-    final tempDir = await Directory.systemTemp.createTemp('ifutures_csv_export_test_');
+    final tempDir = await Directory.systemTemp.createTemp(
+      'ifutures_csv_export_test_',
+    );
     addTearDown(() {
       if (tempDir.existsSync()) {
         tempDir.deleteSync(recursive: true);
@@ -53,7 +55,9 @@ void main() {
     expect(exportedFile.path, endsWith('.csv'));
     expect(exportedFile.existsSync(), isTrue);
 
-    final exportDirectory = Directory('${tempDir.path}${Platform.pathSeparator}iFutures${Platform.pathSeparator}exports');
+    final exportDirectory = Directory(
+      '${tempDir.path}${Platform.pathSeparator}iFutures${Platform.pathSeparator}exports',
+    );
     expect(exportDirectory.existsSync(), isTrue);
 
     final lines = await exportedFile.readAsLines();

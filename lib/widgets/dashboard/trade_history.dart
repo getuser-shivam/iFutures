@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../providers/trading_provider.dart';
+import '../../models/binance_account_status.dart';
 import '../../models/trade.dart';
 import '../../trading/trading_engine.dart';
 import '../../theme/app_theme.dart';
@@ -16,11 +17,32 @@ class TradeHistory extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final trades = ref.watch(tradeStreamProvider(symbol));
+    final accountTrades = ref.watch(accountTradeStreamProvider(symbol));
+    final binanceStatus = ref.watch(binanceAccountStatusProvider(symbol));
     final engineAsync = ref.watch(tradingEngineProvider(symbol));
-    final tradeList = trades.maybeWhen(
+    final symbolTradeList = trades.maybeWhen(
       data: (list) => list,
       orElse: () => const <Trade>[],
     );
+    final accountTradeList = accountTrades.maybeWhen(
+      data: (list) => list,
+      orElse: () => const <Trade>[],
+    );
+    final activeStatus = binanceStatus.maybeWhen(
+      data: (status) => status,
+      orElse: () => const BinanceAccountStatus.notConfigured(),
+    );
+    final hasActiveBinanceSync =
+        activeStatus.state == BinanceAccountState.active ||
+        activeStatus.state == BinanceAccountState.limited;
+    final isShowingAccountFallback =
+        symbolTradeList.isEmpty &&
+        hasActiveBinanceSync &&
+        accountTradeList.isNotEmpty;
+    final visibleTrades = isShowingAccountFallback
+        ? accountTradeList
+        : symbolTradeList;
+    final exportLabel = isShowingAccountFallback ? 'ACCOUNT' : symbol;
 
     return AppPanel(
       child: Column(
@@ -44,7 +66,9 @@ class TradeHistory extends ConsumerWidget {
               ),
               const Spacer(),
               Text(
-                '${tradeList.length} trades',
+                isShowingAccountFallback
+                    ? '${visibleTrades.length} account fills'
+                    : '${visibleTrades.length} trades',
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
               const SizedBox(width: 8),
@@ -54,7 +78,7 @@ class TradeHistory extends ConsumerWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   TextButton.icon(
-                    onPressed: tradeList.isEmpty
+                    onPressed: visibleTrades.isEmpty
                         ? null
                         : () async {
                             try {
@@ -62,8 +86,8 @@ class TradeHistory extends ConsumerWidget {
                                 tradeCsvExportServiceProvider,
                               );
                               await exportService.exportTrades(
-                                symbol: symbol,
-                                trades: tradeList,
+                                symbol: exportLabel,
+                                trades: visibleTrades,
                               );
                               if (!context.mounted) return;
                               showAppToast(
@@ -95,7 +119,10 @@ class TradeHistory extends ConsumerWidget {
                     label: const Text('EXPORT'),
                   ),
                   TextButton.icon(
-                    onPressed: tradeList.isEmpty || engineAsync.isLoading
+                    onPressed:
+                        visibleTrades.isEmpty ||
+                            isShowingAccountFallback ||
+                            engineAsync.isLoading
                         ? null
                         : () async {
                             if (engineAsync is AsyncData<TradingEngine>) {
@@ -127,31 +154,55 @@ class TradeHistory extends ConsumerWidget {
             'CSV exports save to your Documents/iFutures/exports folder.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
+          if (isShowingAccountFallback) ...[
+            const SizedBox(height: 10),
+            Text(
+              'No recent fills were found for $symbol. Showing latest Binance fills across your tracked symbols instead.',
+              style: const TextStyle(
+                color: AppColors.glowCyan,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
           const SizedBox(height: 16),
           trades.when(
-            data: (tradeList) {
-              if (tradeList.isEmpty) {
-                return const Center(
+            data: (_) {
+              if (visibleTrades.isEmpty) {
+                final emptyMessage = hasActiveBinanceSync
+                    ? 'Binance sync is active, but no recent fills were found for $symbol or your tracked symbols yet.'
+                    : 'No trades yet. Start the bot or use Manual mode.';
+                return Center(
                   child: Text(
-                    'No trades yet. Start the bot or use Manual mode.',
-                    style: TextStyle(color: AppColors.textSecondary),
+                    emptyMessage,
+                    style: const TextStyle(color: AppColors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
                 );
               }
 
-              return ListView.separated(
-                itemCount: tradeList.length,
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (context, index) {
-                  final trade =
-                      tradeList[tradeList.length -
-                          1 -
-                          index]; // Show newest first
-                  return _buildTradeItem(trade);
-                },
+              final desiredHeight = (visibleTrades.length * 106.0)
+                  .clamp(140.0, 360.0)
+                  .toDouble();
+
+              return SizedBox(
+                height: desiredHeight,
+                child: Scrollbar(
+                  thumbVisibility: visibleTrades.length > 3,
+                  child: ListView.separated(
+                    itemCount: visibleTrades.length,
+                    padding: EdgeInsets.zero,
+                    physics: const ClampingScrollPhysics(),
+                    separatorBuilder: (_, __) => const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final trade =
+                          visibleTrades[visibleTrades.length -
+                              1 -
+                              index]; // Show newest first
+                      return _buildTradeItem(trade);
+                    },
+                  ),
+                ),
               );
             },
             loading: () => const Center(child: CircularProgressIndicator()),

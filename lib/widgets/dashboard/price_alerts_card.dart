@@ -12,10 +12,7 @@ import '../common/status_pill.dart';
 class PriceAlertsCard extends ConsumerStatefulWidget {
   final String symbol;
 
-  const PriceAlertsCard({
-    super.key,
-    required this.symbol,
-  });
+  const PriceAlertsCard({super.key, required this.symbol});
 
   @override
   ConsumerState<PriceAlertsCard> createState() => _PriceAlertsCardState();
@@ -117,7 +114,11 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
         children: [
           Row(
             children: [
-              const Icon(Icons.notifications_active_outlined, color: AppColors.textSecondary, size: 20),
+              const Icon(
+                Icons.notifications_active_outlined,
+                color: AppColors.textSecondary,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Price Alerts',
@@ -130,10 +131,14 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
               const Spacer(),
               alertsAsync.when(
                 data: (alerts) {
-                  final activeCount = alerts.where((alert) => alert.isActive).length;
+                  final activeCount = alerts
+                      .where((alert) => alert.isActive)
+                      .length;
                   return StatusPill(
                     label: '$activeCount active',
-                    color: activeCount > 0 ? AppColors.glowCyan : AppColors.textMuted,
+                    color: activeCount > 0
+                        ? AppColors.glowCyan
+                        : AppColors.textMuted,
                   );
                 },
                 loading: () => const SizedBox.shrink(),
@@ -171,7 +176,9 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
             children: [
               TextField(
                 controller: _thresholdController,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
                 decoration: const InputDecoration(
                   labelText: 'Alert threshold',
                   hintText: 'e.g. 0.7425',
@@ -185,7 +192,9 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
                 ],
                 onPressed: (index) {
                   setState(() {
-                    _direction = index == 0 ? PriceAlertDirection.above : PriceAlertDirection.below;
+                    _direction = index == 0
+                        ? PriceAlertDirection.above
+                        : PriceAlertDirection.below;
                   });
                 },
                 borderRadius: BorderRadius.circular(12),
@@ -260,19 +269,20 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
     final color = alert.isTriggered
         ? AppColors.textMuted
         : alert.direction == PriceAlertDirection.above
-            ? AppColors.positive
-            : AppColors.warning;
+        ? AppColors.positive
+        : AppColors.warning;
 
     final statusLabel = alert.isTriggered
         ? 'TRIGGERED'
         : alert.enabled
-            ? 'ACTIVE'
-            : 'PAUSED';
+        ? 'ACTIVE'
+        : 'PAUSED';
 
     final detailText = alert.isTriggered
         ? 'Triggered at ${TimeOfDay.fromDateTime(alert.triggeredAt!).format(context)}'
         : '${alert.direction.label} \$${formatPriceValue(alert.threshold)}';
-    final createdText = 'Created ${TimeOfDay.fromDateTime(alert.createdAt).format(context)}';
+    final createdText =
+        'Created ${TimeOfDay.fromDateTime(alert.createdAt).format(context)}';
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -284,7 +294,9 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
       child: Row(
         children: [
           Icon(
-            alert.direction == PriceAlertDirection.above ? Icons.trending_up : Icons.trending_down,
+            alert.direction == PriceAlertDirection.above
+                ? Icons.trending_up
+                : Icons.trending_down,
             color: color,
             size: 18,
           ),
@@ -315,10 +327,7 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              StatusPill(
-                label: statusLabel,
-                color: color,
-              ),
+              StatusPill(label: statusLabel, color: color),
               const SizedBox(height: 8),
               Row(
                 mainAxisSize: MainAxisSize.min,

@@ -1,14 +1,22 @@
-﻿# TODO
+# TODO
 
-Last updated: 2026-03-26
+Last updated: 2026-04-02
 
 ## Now
-- [ ] Multi-exchange support (Binance + Coinbase).
+- [ ] AI decision feedback memory with outcome review and confidence calibration.
+- [ ] Order-book trend history so AI can compare the last several minutes of spread, imbalance, and sweep cost.
 
 ## Next
 - [ ] Portfolio analytics dashboard.
+- [ ] Multi-exchange support (Binance + Coinbase).
 
 ## Done
+- [x] Binance and AI verification workflow with `Live Connection` / `Demo Connection`, direct apply/save actions, and runtime status labels.
+- [x] Trade history card now uses a bounded inner scroll and falls back to tracked-account fills when the selected symbol has no recent Binance trades.
+- [x] Binance order-book execution context with spread, imbalance, and market-impact estimates for AI order-type decisions.
+- [x] Multi-timeframe AI context with 1m / 5m / 15m alignment in the strategy console and AI prompt.
+- [x] AI context analyzer with regime detection, portfolio/trade-review posture, and dynamic AI size scaling.
+- [x] Protection engine with cooldown, loss-streak locks, drawdown locks, and manual-override-safe auto-entry blocking.
 - [x] Strategy console for AI/ALGO decisions with auto-selected order types.
 - [x] Strategy terminal with persistent AI mode and live activity logs.
 - [x] Strategy parameter tuning UI and presets.

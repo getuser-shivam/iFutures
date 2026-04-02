@@ -3,25 +3,36 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:ifutures/models/binance_account_status.dart';
 import 'package:ifutures/models/connection_status.dart';
+import 'package:ifutures/models/kline.dart';
 import 'package:ifutures/models/manual_order.dart';
+import 'package:ifutures/models/protection_status.dart';
 import 'package:ifutures/models/risk_settings.dart';
 import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/services/binance_api.dart';
 import 'package:ifutures/services/binance_ws.dart';
 import 'package:ifutures/services/trade_history_service.dart';
 import 'package:ifutures/trading/manual_strategy.dart';
+import 'package:ifutures/trading/strategy.dart';
 import 'package:ifutures/trading/trading_engine.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class _FakeBinanceApiService extends BinanceApiService {
   final List<dynamic> positionRiskPayload;
   final List<dynamic> userTradesPayload;
+  final Map<String, List<dynamic>> userTradesBySymbol;
+  final Map<String, dynamic> accountInfoPayload;
 
   _FakeBinanceApiService({
     String apiKey = '',
     String apiSecret = '',
     this.positionRiskPayload = const <dynamic>[],
     this.userTradesPayload = const <dynamic>[],
+    this.userTradesBySymbol = const <String, List<dynamic>>{},
+    this.accountInfoPayload = const <String, dynamic>{
+      'totalWalletBalance': '0',
+      'availableBalance': '0',
+      'positions': <dynamic>[],
+    },
   }) : super(apiKey: apiKey, apiSecret: apiSecret);
 
   @override
@@ -43,7 +54,15 @@ class _FakeBinanceApiService extends BinanceApiService {
     required String symbol,
     int limit = 100,
   }) async {
+    if (userTradesBySymbol.isNotEmpty) {
+      return userTradesBySymbol[symbol.toUpperCase()] ?? const <dynamic>[];
+    }
     return userTradesPayload;
+  }
+
+  @override
+  Future<Map<String, dynamic>> getAccountInfo() async {
+    return accountInfoPayload;
   }
 }
 
@@ -82,6 +101,48 @@ class _FakeBinanceWebSocketService extends BinanceWebSocketService {
 
   void dispose() {
     _controller.close();
+  }
+}
+
+class _AlwaysBuyStrategy extends TradingStrategy
+    implements TradePlanningStrategy {
+  @override
+  String get name => 'Always Buy';
+
+  @override
+  Future<TradingSignal> evaluate(List<Kline> history) async {
+    return TradingSignal.buy;
+  }
+
+  @override
+  Future<StrategyTradePlan> buildTradePlan(
+    List<Kline> history, {
+    String? symbol,
+    RiskSettings? riskSettings,
+    StrategyAnalysisContext? context,
+  }) async {
+    final currentPrice = history.last.close;
+    final config =
+        riskSettings ??
+        const RiskSettings(
+          stopLossPercent: 0,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+        );
+
+    return StrategyTradePlan(
+      strategyName: name,
+      signal: TradingSignal.buy,
+      orderType: ManualOrderType.market,
+      currentPrice: currentPrice,
+      targetEntryPrice: currentPrice,
+      leverage: config.leverage,
+      takeProfitPercent: config.takeProfitPercent,
+      stopLossPercent: config.stopLossPercent,
+      rationale: 'Test strategy always requests a long entry.',
+      generatedAt: DateTime.now(),
+      quantity: config.tradeQuantity,
+    );
   }
 }
 
@@ -338,6 +399,61 @@ void main() {
     },
   );
 
+  test(
+    'live Binance sync exposes tracked account fills when selected symbol has none',
+    () async {
+      final wsService = _FakeBinanceWebSocketService();
+      final tradeHistoryService = TradeHistoryService();
+      final engine = TradingEngine(
+        apiService: _FakeBinanceApiService(
+          apiKey: 'live_key',
+          apiSecret: 'live_secret',
+          userTradesBySymbol: {
+            'GALAUSDT': const <dynamic>[],
+            'TRIAUSDT': [
+              {
+                'symbol': 'TRIAUSDT',
+                'orderId': '9101',
+                'side': 'BUY',
+                'price': '0.029100',
+                'qty': '250',
+                'time': DateTime(2026, 3, 31, 9, 59).millisecondsSinceEpoch,
+                'commission': '0.0125',
+                'realizedPnl': '0',
+                'maker': false,
+              },
+            ],
+          },
+        ),
+        wsService: wsService,
+        tradeHistoryService: tradeHistoryService,
+        strategy: ManualStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 0,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+        ),
+        symbol: 'GALAUSDT',
+        trackedSymbols: const ['GALAUSDT', 'TRIAUSDT'],
+      );
+
+      await engine.startMarketData();
+
+      expect(engine.trades, isEmpty);
+      expect(engine.accountTrades, hasLength(1));
+      expect(engine.accountTrades.first.symbol, 'TRIAUSDT');
+      expect(engine.lastBinanceAccountStatus.state, BinanceAccountState.active);
+
+      final persistedTrackedTrades = await tradeHistoryService.loadTrades(
+        'TRIAUSDT',
+      );
+      expect(persistedTrackedTrades, hasLength(1));
+
+      engine.dispose();
+      wsService.dispose();
+    },
+  );
+
   test('manual ticket is rejected in read-only Binance sync mode', () async {
     final wsService = _FakeBinanceWebSocketService();
     final engine = TradingEngine(
@@ -371,4 +487,196 @@ void main() {
     engine.dispose();
     wsService.dispose();
   });
+
+  test(
+    'persisted losing exits restore the protection lock on startup',
+    () async {
+      final wsService = _FakeBinanceWebSocketService();
+      final tradeHistoryService = TradeHistoryService();
+      await tradeHistoryService.saveTrades('GALAUSDT', [
+        Trade(
+          symbol: 'GALAUSDT',
+          side: 'SELL',
+          price: 1.0,
+          quantity: 1,
+          timestamp: DateTime.now().subtract(const Duration(minutes: 5)),
+          status: 'simulated',
+          strategy: 'Always Buy',
+          kind: 'EXIT',
+          realizedPnl: -0.2,
+          reason: 'stop_loss',
+        ),
+      ]);
+
+      final engine = TradingEngine(
+        apiService: _FakeBinanceApiService(),
+        wsService: wsService,
+        tradeHistoryService: tradeHistoryService,
+        strategy: ManualStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 0,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+          protectionPauseMinutes: 30,
+          maxConsecutiveLosses: 1,
+        ),
+        symbol: 'GALAUSDT',
+      );
+
+      await engine.startMarketData();
+
+      expect(engine.trades, hasLength(1));
+      expect(engine.lastProtectionStatus.state, ProtectionState.locked);
+      expect(engine.lastProtectionStatus.message, contains('Loss streak lock'));
+
+      engine.dispose();
+      wsService.dispose();
+    },
+  );
+
+  test('cooldown blocks auto re-entry after a stop loss', () async {
+    final wsService = _FakeBinanceWebSocketService();
+    final engine = TradingEngine(
+      apiService: _FakeBinanceApiService(),
+      wsService: wsService,
+      tradeHistoryService: TradeHistoryService(),
+      strategy: _AlwaysBuyStrategy(),
+      riskSettings: const RiskSettings(
+        stopLossPercent: 5,
+        takeProfitPercent: 0,
+        tradeQuantity: 1,
+        cooldownMinutes: 30,
+      ),
+      symbol: 'GALAUSDT',
+    );
+
+    await engine.enableTrading();
+    expect(engine.openPosition, isNotNull);
+
+    wsService.emitKline(3, 1.0);
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+
+    expect(engine.openPosition, isNull);
+    expect(engine.trades, hasLength(2));
+    expect(engine.trades.last.reason, 'stop_loss');
+    expect(engine.lastProtectionStatus.state, ProtectionState.cooldown);
+    expect(engine.lastProtectionStatus.message, contains('Cooldown active'));
+
+    engine.dispose();
+    wsService.dispose();
+  });
+
+  test(
+    'loss streak lock blocks auto entries after the configured loss count',
+    () async {
+      final wsService = _FakeBinanceWebSocketService();
+      final engine = TradingEngine(
+        apiService: _FakeBinanceApiService(),
+        wsService: wsService,
+        tradeHistoryService: TradeHistoryService(),
+        strategy: _AlwaysBuyStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 5,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+          cooldownMinutes: 0,
+          protectionPauseMinutes: 45,
+          maxConsecutiveLosses: 1,
+        ),
+        symbol: 'GALAUSDT',
+      );
+
+      await engine.enableTrading();
+      wsService.emitKline(3, 1.0);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(engine.openPosition, isNull);
+      expect(engine.trades, hasLength(2));
+      expect(engine.lastProtectionStatus.state, ProtectionState.locked);
+      expect(engine.lastProtectionStatus.message, contains('Loss streak lock'));
+
+      engine.dispose();
+      wsService.dispose();
+    },
+  );
+
+  test(
+    'drawdown lock blocks auto entries after realized equity falls from a profitable peak',
+    () async {
+      final wsService = _FakeBinanceWebSocketService();
+      final engine = TradingEngine(
+        apiService: _FakeBinanceApiService(),
+        wsService: wsService,
+        tradeHistoryService: TradeHistoryService(),
+        strategy: _AlwaysBuyStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 5,
+          takeProfitPercent: 5,
+          tradeQuantity: 1,
+          cooldownMinutes: 0,
+          protectionPauseMinutes: 45,
+          maxDrawdownPercent: 10,
+        ),
+        symbol: 'GALAUSDT',
+      );
+
+      await engine.enableTrading();
+      expect(engine.openPosition, isNotNull);
+
+      wsService.emitKline(3, 1.3);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      expect(engine.openPosition, isNotNull);
+      expect(engine.trades, hasLength(3));
+
+      wsService.emitKline(4, 1.0);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(engine.openPosition, isNull);
+      expect(engine.trades, hasLength(4));
+      expect(engine.lastProtectionStatus.state, ProtectionState.locked);
+      expect(engine.lastProtectionStatus.message, contains('Drawdown lock'));
+
+      engine.dispose();
+      wsService.dispose();
+    },
+  );
+
+  test(
+    'manual override can still place a trade while protection cooldown is active',
+    () async {
+      final wsService = _FakeBinanceWebSocketService();
+      final engine = TradingEngine(
+        apiService: _FakeBinanceApiService(),
+        wsService: wsService,
+        tradeHistoryService: TradeHistoryService(),
+        strategy: _AlwaysBuyStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 5,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+          cooldownMinutes: 30,
+        ),
+        symbol: 'GALAUSDT',
+      );
+
+      await engine.enableTrading();
+      wsService.emitKline(3, 1.0);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      expect(engine.lastProtectionStatus.state, ProtectionState.cooldown);
+      expect(engine.openPosition, isNull);
+
+      await engine.manualEnterLong();
+
+      expect(engine.isTradingEnabled, isFalse);
+      expect(engine.isManualOverrideActive, isTrue);
+      expect(engine.openPosition, isNotNull);
+      expect(engine.openPosition!.isLong, isTrue);
+      expect(engine.trades, hasLength(3));
+      expect(engine.trades.last.reason, 'manual');
+
+      engine.dispose();
+      wsService.dispose();
+    },
+  );
 }

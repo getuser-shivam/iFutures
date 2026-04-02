@@ -1,4 +1,4 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 
 import '../models/connection_status.dart';
 import 'reconnecting_websocket.dart';

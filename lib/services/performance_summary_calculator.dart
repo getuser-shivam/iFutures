@@ -9,10 +9,11 @@ class PerformanceSummaryCalculator {
     DateTime? windowStart,
     DateTime? windowEnd,
   }) {
-    final realizedTrades = trades
-        .where((trade) => trade.kind == 'EXIT' && trade.realizedPnl != null)
-        .toList()
-      ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
+    final realizedTrades =
+        trades
+            .where((trade) => trade.kind == 'EXIT' && trade.realizedPnl != null)
+            .toList()
+          ..sort((a, b) => a.timestamp.compareTo(b.timestamp));
 
     if (realizedTrades.isEmpty) {
       return PerformanceSummary.empty(
@@ -21,9 +22,15 @@ class PerformanceSummaryCalculator {
       );
     }
 
-    final tradePnLs = realizedTrades.map((trade) => trade.realizedPnl!).toList();
-    final winningTrades = realizedTrades.where((trade) => trade.realizedPnl! > 0).length;
-    final losingTrades = realizedTrades.where((trade) => trade.realizedPnl! < 0).length;
+    final tradePnLs = realizedTrades
+        .map((trade) => trade.realizedPnl!)
+        .toList();
+    final winningTrades = realizedTrades
+        .where((trade) => trade.realizedPnl! > 0)
+        .length;
+    final losingTrades = realizedTrades
+        .where((trade) => trade.realizedPnl! < 0)
+        .length;
 
     final totalPnL = tradePnLs.fold(0.0, (sum, pnl) => sum + pnl);
     final bestTrade = tradePnLs.reduce((a, b) => a > b ? a : b);
@@ -57,7 +64,9 @@ class PerformanceSummaryCalculator {
       }
     }
 
-    final profitFactor = grossLoss == 0 ? double.infinity : grossProfit / grossLoss;
+    final profitFactor = grossLoss == 0
+        ? double.infinity
+        : grossProfit / grossLoss;
 
     return PerformanceSummary(
       totalTrades: realizedTrades.length,
@@ -74,15 +83,14 @@ class PerformanceSummaryCalculator {
     );
   }
 
-  static PerformanceSummary calculateForDay(Iterable<Trade> trades, DateTime day) {
+  static PerformanceSummary calculateForDay(
+    Iterable<Trade> trades,
+    DateTime day,
+  ) {
     final start = _startOfDay(day);
     final end = start.add(const Duration(days: 1));
     final filtered = filterTradesForDay(trades, day);
-    return calculate(
-      filtered,
-      windowStart: start,
-      windowEnd: end,
-    );
+    return calculate(filtered, windowStart: start, windowEnd: end);
   }
 
   static List<Trade> filterTradesForDay(Iterable<Trade> trades, DateTime day) {

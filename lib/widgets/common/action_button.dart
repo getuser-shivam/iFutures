@@ -28,10 +28,7 @@ class ActionButton extends StatelessWidget {
           child: Ink(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [
-                  color.withOpacity(0.95),
-                  color.withOpacity(0.7),
-                ],
+                colors: [color.withOpacity(0.95), color.withOpacity(0.7)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),

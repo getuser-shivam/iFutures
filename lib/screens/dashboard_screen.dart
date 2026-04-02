@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../trading/trading_engine.dart';
 import '../constants/symbols.dart';
+import '../models/ai_service_status.dart';
 import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
 import '../models/strategy_mode.dart';
@@ -37,6 +38,7 @@ class DashboardScreen extends ConsumerWidget {
     final binanceAccountStatus = ref.watch(
       binanceAccountStatusProvider(symbol),
     );
+    final aiServiceStatus = ref.watch(aiServiceStatusProvider(symbol));
     final currentMode = ref.watch(currentStrategyModeProvider);
     final currentStrategy = ref.watch(currentStrategyProvider);
     final symbolsAsync = ref.watch(symbolListProvider);
@@ -65,38 +67,28 @@ class DashboardScreen extends ConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('iFutures'),
-        actions: [
-          _SymbolDropdown(
-            value: symbol,
-            symbols: symbols,
-            onChanged: (value) {
-              if (value == null) return;
-              ref.read(selectedSymbolProvider.notifier).setSymbol(value);
-            },
-          ),
-          IconButton(
-            icon: const Icon(Icons.photo_library_outlined),
-            tooltip: 'App Gallery',
-            onPressed: () {
-              Navigator.push(
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(82),
+        child: Material(
+          color: AppColors.backgroundTop,
+          child: SafeArea(
+            bottom: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 8, 16, 8),
+              child: _buildTopBar(
                 context,
-                MaterialPageRoute(builder: (context) => const GalleryScreen()),
-              );
-            },
+                ref,
+                ticker,
+                symbol,
+                symbols,
+                aiServiceStatus,
+                binanceAccountStatus,
+                currentMode,
+                currentStrategy?.name,
+              ),
+            ),
           ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (context) => const SettingsScreen()),
-              );
-            },
-          ),
-          const SizedBox(width: 8),
-        ],
+        ),
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -114,19 +106,6 @@ class DashboardScreen extends ConsumerWidget {
               slivers: [
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: _buildHeader(
-                      context,
-                      ticker,
-                      symbol,
-                      binanceAccountStatus,
-                      currentMode,
-                      currentStrategy?.name,
-                    ),
-                  ),
-                ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
                   sliver: SliverToBoxAdapter(
                     child: _buildStrategyWorkspaceHint(
                       context,
@@ -246,6 +225,7 @@ class DashboardScreen extends ConsumerWidget {
                       isRunning,
                       engineAsync,
                       connectionStatus,
+                      aiServiceStatus,
                       binanceAccountStatus,
                     ),
                   ),
@@ -318,171 +298,207 @@ class DashboardScreen extends ConsumerWidget {
     );
   }
 
-  Widget _buildHeader(
+  Widget _buildTopBar(
     BuildContext context,
+    WidgetRef ref,
     AsyncValue<dynamic> ticker,
     String symbol,
+    List<String> symbols,
+    AsyncValue<AiServiceStatus> aiServiceStatus,
     AsyncValue<BinanceAccountStatus> binanceAccountStatus,
     StrategyMode currentMode,
     String? strategyName,
   ) {
     final textTheme = Theme.of(context).textTheme;
+    final actions = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _SymbolDropdown(
+          value: symbol,
+          symbols: symbols,
+          onChanged: (value) {
+            if (value == null) return;
+            ref.read(selectedSymbolProvider.notifier).setSymbol(value);
+          },
+        ),
+        const SizedBox(width: 8),
+        IconButton(
+          icon: const Icon(Icons.photo_library_outlined),
+          tooltip: 'App Gallery',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const GalleryScreen()),
+            );
+          },
+        ),
+        IconButton(
+          icon: const Icon(Icons.settings_outlined),
+          tooltip: 'Settings',
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const SettingsScreen()),
+            );
+          },
+        ),
+      ],
+    );
 
-    return AppPanel(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final isCompact = constraints.maxWidth < 780;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 720;
 
-          final leftContent = Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Current Price',
-                style: TextStyle(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 6),
-              ticker.when(
-                data: (data) {
-                  final dynamic priceValue = data is Map ? data['c'] : data;
-                  final priceText = priceValue?.toString() ?? '--';
-                  return Wrap(
-                    crossAxisAlignment: WrapCrossAlignment.end,
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      Text(
-                        priceText,
-                        style: tabularFigures(
-                          const TextStyle(
-                            color: AppColors.textPrimary,
-                            fontSize: 30,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                      const Padding(
-                        padding: EdgeInsets.only(bottom: 3),
-                        child: Text(
-                          'USDT',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 0.4,
-                          ),
-                        ),
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: AppColors.surfaceAlt,
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: const Text(
-                          'LIVE',
-                          style: TextStyle(
-                            color: AppColors.glowCyan,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                    ],
-                  );
-                },
-                loading: () => const SizedBox(
-                  height: 28,
-                  width: 28,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-                error: (e, s) => Text(
-                  'Error: $e',
-                  style: const TextStyle(color: AppColors.negative),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                symbol,
-                style: textTheme.labelMedium?.copyWith(
-                  color: AppColors.textMuted,
-                  letterSpacing: 0.4,
-                ),
-              ),
-            ],
-          );
-
-          final rightContent = Column(
-            crossAxisAlignment: isCompact
-                ? CrossAxisAlignment.start
-                : CrossAxisAlignment.end,
-            children: [
-              Wrap(
-                alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  StatusPill(
-                    label: 'Mode: ${currentMode.label}',
-                    color: _modeColor(currentMode),
+        final leftContent = ticker.when(
+          data: (data) {
+            final dynamic priceValue = data is Map ? data['c'] : data;
+            final priceText = priceValue?.toString() ?? '--';
+            return Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 10,
+              runSpacing: 8,
+              children: [
+                Text(
+                  priceText,
+                  style: tabularFigures(
+                    const TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
-                  _buildBinanceBadge(binanceAccountStatus, compact: true),
+                ),
+                const Text(
+                  'USDT',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.35,
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AppColors.surfaceAlt,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.border),
+                  ),
+                  child: const Text(
+                    'LIVE',
+                    style: TextStyle(
+                      color: AppColors.glowCyan,
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                ),
+                Text(
+                  symbol,
+                  style: textTheme.labelMedium?.copyWith(
+                    color: AppColors.textMuted,
+                    letterSpacing: 0.3,
+                  ),
+                ),
+              ],
+            );
+          },
+          loading: () => const SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          ),
+          error: (e, s) => Text(
+            'Error: $e',
+            style: const TextStyle(color: AppColors.negative),
+          ),
+        );
+
+        final rightContent = Wrap(
+          alignment: isCompact ? WrapAlignment.start : WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            StatusPill(
+              label: 'Mode: ${currentMode.label}',
+              color: _modeColor(currentMode),
+            ),
+            _buildBinanceBadge(binanceAccountStatus, compact: true),
+            if (strategyName != null && strategyName.trim().isNotEmpty)
+              Text(
+                _strategyHeaderLabel(
+                  strategyName,
+                  currentMode,
+                  aiServiceStatus,
+                ),
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+          ],
+        );
+
+        if (isCompact) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Expanded(child: leftContent),
+                  const SizedBox(width: 12),
+                  actions,
                 ],
               ),
               const SizedBox(height: 8),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: isCompact ? constraints.maxWidth : 220,
-                ),
-                child: Text(
-                  strategyName ?? 'Loading strategy...',
-                  textAlign: isCompact ? TextAlign.left : TextAlign.right,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              ConstrainedBox(
-                constraints: BoxConstraints(
-                  maxWidth: isCompact ? constraints.maxWidth : 220,
-                ),
-                child: Text(
-                  'Manage AI, ALGO, and MANUAL in Settings',
-                  textAlign: isCompact ? TextAlign.left : TextAlign.right,
-                  style: textTheme.labelSmall?.copyWith(
-                    color: AppColors.textMuted,
-                    letterSpacing: 0.2,
-                  ),
-                ),
-              ),
+              rightContent,
             ],
           );
+        }
 
-          if (isCompact) {
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [leftContent, const SizedBox(height: 16), rightContent],
-            );
-          }
-
-          return Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: leftContent),
-              const SizedBox(width: 20),
-              Flexible(child: rightContent),
-            ],
-          );
-        },
-      ),
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(flex: 5, child: leftContent),
+            const SizedBox(width: 18),
+            Expanded(flex: 4, child: rightContent),
+            const SizedBox(width: 16),
+            actions,
+          ],
+        );
+      },
     );
+  }
+
+  String _strategyHeaderLabel(
+    String strategyName,
+    StrategyMode currentMode,
+    AsyncValue<AiServiceStatus> aiServiceStatus,
+  ) {
+    if (currentMode != StrategyMode.ai) {
+      return strategyName;
+    }
+
+    final suffix = aiServiceStatus.when(
+      data: (data) => switch (data.state) {
+        AiServiceState.notConfigured => 'Not Set',
+        AiServiceState.checking => 'Checking',
+        AiServiceState.active => 'Active',
+        AiServiceState.attentionRequired => 'Attention',
+      },
+      loading: () => 'Checking',
+      error: (_, __) => 'Error',
+    );
+
+    return '$strategyName: $suffix';
   }
 
   Widget _buildStrategyWorkspaceHint(
@@ -584,6 +600,7 @@ class DashboardScreen extends ConsumerWidget {
     bool isRunning,
     AsyncValue<TradingEngine> engineAsync,
     AsyncValue<ConnectionStatus> connectionStatus,
+    AsyncValue<AiServiceStatus> aiServiceStatus,
     AsyncValue<BinanceAccountStatus> binanceAccountStatus,
   ) {
     return Wrap(
@@ -608,9 +625,44 @@ class DashboardScreen extends ConsumerWidget {
             color: AppColors.negative,
           ),
         ),
+        _buildAiBadge(aiServiceStatus),
         _buildBinanceBadge(binanceAccountStatus),
         _buildConnectionBadge(connectionStatus),
       ],
+    );
+  }
+
+  Widget _buildAiBadge(
+    AsyncValue<AiServiceStatus> status, {
+    bool compact = false,
+  }) {
+    return status.when(
+      data: (data) {
+        return switch (data.state) {
+          AiServiceState.notConfigured => StatusPill(
+            label: compact ? 'AI API: Not Set' : 'AI API: Not Configured',
+            color: AppColors.warning,
+          ),
+          AiServiceState.checking => StatusPill(
+            label: compact ? 'AI API: Checking' : 'AI API: Checking',
+            color: AppColors.glowAmber,
+          ),
+          AiServiceState.active => StatusPill(
+            label: compact ? 'AI API: Active' : 'AI API: Active',
+            color: AppColors.positive,
+          ),
+          AiServiceState.attentionRequired => StatusPill(
+            label: compact ? 'AI API: Attention' : 'AI API: Attention',
+            color: AppColors.negative,
+          ),
+        };
+      },
+      loading: () => const StatusPill(
+        label: 'AI API: Checking',
+        color: AppColors.glowAmber,
+      ),
+      error: (e, _) =>
+          const StatusPill(label: 'AI API: Error', color: AppColors.negative),
     );
   }
 
@@ -620,7 +672,7 @@ class DashboardScreen extends ConsumerWidget {
   }) {
     return status.when(
       data: (data) {
-        final prefix = data.isTestnet ? 'Binance Testnet' : 'Binance Live';
+        final prefix = data.isTestnet ? 'Binance Demo' : 'Binance Live';
         return switch (data.state) {
           BinanceAccountState.notConfigured => StatusPill(
             label: compact ? 'Binance: Not Set' : '$prefix: Not Configured',
@@ -633,6 +685,10 @@ class DashboardScreen extends ConsumerWidget {
           BinanceAccountState.active => StatusPill(
             label: compact ? 'Binance: Active' : '$prefix: Active',
             color: AppColors.positive,
+          ),
+          BinanceAccountState.limited => StatusPill(
+            label: compact ? 'Binance: Read Only' : '$prefix: Read Only',
+            color: AppColors.warning,
           ),
           BinanceAccountState.attentionRequired => StatusPill(
             label: compact ? 'Binance: Attention' : '$prefix: Attention',

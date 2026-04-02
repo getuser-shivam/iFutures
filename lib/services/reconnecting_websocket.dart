@@ -1,4 +1,4 @@
-﻿import 'dart:async';
+import 'dart:async';
 
 import 'package:web_socket_channel/web_socket_channel.dart';
 
@@ -148,10 +148,7 @@ class ReconnectingWebSocket {
       return !_disposed;
     }
 
-    await Future.any([
-      Future.delayed(delay),
-      _disposeSignal.future,
-    ]);
+    await Future.any([Future.delayed(delay), _disposeSignal.future]);
 
     return !_disposed;
   }
@@ -161,8 +158,5 @@ class _CycleResult {
   final bool hadMessages;
   final Object? error;
 
-  const _CycleResult({
-    required this.hadMessages,
-    this.error,
-  });
+  const _CycleResult({required this.hadMessages, this.error});
 }

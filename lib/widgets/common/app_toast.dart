@@ -30,10 +30,7 @@ ScaffoldFeatureController<SnackBar, SnackBarClosedReason> showAppToast(
             const SizedBox(width: 8),
           ],
           Flexible(
-            child: Text(
-              message,
-              style: TextStyle(color: textColor),
-            ),
+            child: Text(message, style: TextStyle(color: textColor)),
           ),
         ],
       ),

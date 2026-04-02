@@ -34,7 +34,9 @@ class PriceAlertService {
 
   Future<void> saveAlerts(String symbol, List<PriceAlert> alerts) async {
     await init();
-    final payload = jsonEncode(_sortAlerts(alerts).map((alert) => alert.toJson()).toList());
+    final payload = jsonEncode(
+      _sortAlerts(alerts).map((alert) => alert.toJson()).toList(),
+    );
     await _prefs?.setString('$_keyPrefix$symbol', payload);
   }
 

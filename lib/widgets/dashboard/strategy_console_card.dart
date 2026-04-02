@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/ai_timeframe_snapshot.dart';
 import '../../models/position.dart';
 import '../../models/strategy_console_entry.dart';
+import '../../models/trade.dart';
 import '../../providers/trading_provider.dart';
+import '../../services/performance_summary_calculator.dart';
 import '../../theme/app_theme.dart';
 import '../../trading/manual_strategy.dart';
 import '../../trading/strategy.dart';
@@ -20,9 +23,12 @@ class StrategyConsoleCard extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final planAsync = ref.watch(decisionPlanStreamProvider(symbol));
     final logsAsync = ref.watch(consoleLogStreamProvider(symbol));
+    final accountTradesAsync = ref.watch(accountTradeStreamProvider(symbol));
     final positionAsync = ref.watch(positionStreamProvider(symbol));
     final riskAsync = ref.watch(riskSettingsProvider);
     final tickerAsync = ref.watch(tickerStreamProvider(symbol));
+    final engineAsync = ref.watch(tradingEngineProvider(symbol));
+    ref.watch(binanceAccountStatusProvider(symbol));
     final strategy = ref.watch(currentStrategyProvider);
     final isRunning = ref.watch(isBotRunningProvider(symbol));
 
@@ -33,6 +39,14 @@ class StrategyConsoleCard extends ConsumerWidget {
       data: (entries) => entries,
       orElse: () => const <StrategyConsoleEntry>[],
     );
+    final accountTrades = accountTradesAsync.maybeWhen(
+      data: (entries) => entries,
+      orElse: () => const <Trade>[],
+    );
+    final accountSummary = PerformanceSummaryCalculator.calculate(
+      accountTrades,
+    );
+    final engine = engineAsync.valueOrNull;
     final livePrice = tickerAsync.maybeWhen(
       data: (data) => double.tryParse(data['c']?.toString() ?? ''),
       orElse: () => plan?.currentPrice,
@@ -52,6 +66,9 @@ class StrategyConsoleCard extends ConsumerWidget {
     final positionLabel = position == null
         ? 'NONE'
         : '${position.isLong ? 'LONG' : 'SHORT'} ${_formatQuantity(position.quantity)}';
+    final oneMinute = _timeframeSnapshot(plan, '1m');
+    final fiveMinute = _timeframeSnapshot(plan, '5m');
+    final fifteenMinute = _timeframeSnapshot(plan, '15m');
 
     return AppPanel(
       accent: _executionColor(strategy, isRunning),
@@ -122,6 +139,26 @@ class StrategyConsoleCard extends ConsumerWidget {
                       'Confidence ${(plan!.confidence! * 100).toStringAsFixed(0)}%',
                   color: AppColors.glowAmber,
                 ),
+              if (plan?.timeframeAlignment?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Alignment: ${plan!.timeframeAlignment!}',
+                  color: AppColors.textPrimary,
+                ),
+              if (plan?.executionHint?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Book: ${plan!.executionHint!}',
+                  color: AppColors.glowAmber,
+                ),
+              if (plan?.marketRegime?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Regime: ${plan!.marketRegime!}',
+                  color: AppColors.textPrimary,
+                ),
+              if (plan?.riskPosture?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Risk: ${plan!.riskPosture!}',
+                  color: AppColors.glowAmber,
+                ),
             ],
           ),
           const SizedBox(height: 16),
@@ -154,13 +191,39 @@ class StrategyConsoleCard extends ConsumerWidget {
                 _ConsoleMetric(
                   label: 'Plan Qty',
                   value: _formatQuantity(plan?.quantity),
-                  helper: 'Configured size',
+                  helper: 'Planned size',
+                  accent: AppColors.glowAmber,
+                ),
+                _ConsoleMetric(
+                  label: 'Size Bias',
+                  value: plan?.sizeFraction == null
+                      ? '--'
+                      : '${(plan!.sizeFraction! * 100).toStringAsFixed(0)}%',
+                  helper: 'AI fraction of max size',
                   accent: AppColors.glowAmber,
                 ),
                 _ConsoleMetric(
                   label: 'Leverage',
                   value: plan == null ? '--' : '${plan.leverage}x',
                   helper: 'Plan cap',
+                  accent: AppColors.glowAmber,
+                ),
+                _ConsoleMetric(
+                  label: 'Wallet',
+                  value: _formatUsdt(engine?.walletBalance),
+                  helper: 'Binance wallet',
+                  accent: AppColors.glowCyan,
+                ),
+                _ConsoleMetric(
+                  label: 'Available',
+                  value: _formatUsdt(engine?.availableBalance),
+                  helper: 'Free margin',
+                  accent: AppColors.positive,
+                ),
+                _ConsoleMetric(
+                  label: 'Open Markets',
+                  value: engine?.openPositionCount?.toString() ?? '--',
+                  helper: 'Tracked futures',
                   accent: AppColors.glowAmber,
                 ),
                 _ConsoleMetric(
@@ -233,6 +296,87 @@ class StrategyConsoleCard extends ConsumerWidget {
                   helper: 'Approximate live margin',
                   accent: AppColors.glowAmber,
                 ),
+                _ConsoleMetric(
+                  label: 'Tracked PnL',
+                  value: _formatSignedUsdt(accountSummary.totalPnL),
+                  helper: accountSummary.totalTrades == 0
+                      ? 'No closed fills yet'
+                      : 'Win rate ${accountSummary.winRate.toStringAsFixed(0)}%',
+                  accent: accountSummary.totalPnL >= 0
+                      ? AppColors.positive
+                      : AppColors.negative,
+                ),
+                _ConsoleMetric(
+                  label: 'Trade Review',
+                  value: plan?.tradeReviewState ?? '--',
+                  helper: 'Recent realized performance',
+                  accent: switch (plan?.tradeReviewState) {
+                    'Hot' => AppColors.positive,
+                    'Cold' => AppColors.negative,
+                    'Unproven' => AppColors.textSecondary,
+                    _ => AppColors.glowCyan,
+                  },
+                ),
+                _ConsoleMetric(
+                  label: 'Spread',
+                  value: plan?.spreadPercent == null
+                      ? '--'
+                      : '${plan!.spreadPercent!.toStringAsFixed(4)}%',
+                  helper: 'Best bid / ask gap',
+                  accent: AppColors.glowAmber,
+                ),
+                _ConsoleMetric(
+                  label: 'Book Imbalance',
+                  value: plan?.orderBookImbalancePercent == null
+                      ? '--'
+                      : '${plan!.orderBookImbalancePercent!.toStringAsFixed(1)}%',
+                  helper: 'Bid vs ask depth',
+                  accent: plan?.orderBookImbalancePercent == null
+                      ? AppColors.textSecondary
+                      : ((plan!.orderBookImbalancePercent!) >= 0
+                            ? AppColors.positive
+                            : AppColors.negative),
+                ),
+                _ConsoleMetric(
+                  label: 'Buy Slip',
+                  value: plan?.estimatedBuySlippagePercent == null
+                      ? '--'
+                      : '${plan!.estimatedBuySlippagePercent!.toStringAsFixed(4)}%',
+                  helper: 'Est. market buy impact',
+                  accent: AppColors.glowCyan,
+                ),
+                _ConsoleMetric(
+                  label: 'Sell Slip',
+                  value: plan?.estimatedSellSlippagePercent == null
+                      ? '--'
+                      : '${plan!.estimatedSellSlippagePercent!.toStringAsFixed(4)}%',
+                  helper: 'Est. market sell impact',
+                  accent: AppColors.glowCyan,
+                ),
+                if (oneMinute != null)
+                  _ConsoleMetric(
+                    label: '1m Context',
+                    value: oneMinute.regime,
+                    helper:
+                        '${oneMinute.shortMomentumPercent.toStringAsFixed(2)}% short move',
+                    accent: _timeframeAccent(oneMinute.regime),
+                  ),
+                if (fiveMinute != null)
+                  _ConsoleMetric(
+                    label: '5m Context',
+                    value: fiveMinute.regime,
+                    helper:
+                        '${fiveMinute.mediumMomentumPercent.toStringAsFixed(2)}% medium move',
+                    accent: _timeframeAccent(fiveMinute.regime),
+                  ),
+                if (fifteenMinute != null)
+                  _ConsoleMetric(
+                    label: '15m Context',
+                    value: fifteenMinute.regime,
+                    helper:
+                        'Range ${fifteenMinute.rangePositionPercent.toStringAsFixed(0)}%',
+                    accent: _timeframeAccent(fifteenMinute.regime),
+                  ),
                 _ConsoleMetric(
                   label: 'Live Price',
                   value: _formatPrice(livePrice),
@@ -400,6 +544,35 @@ class StrategyConsoleCard extends ConsumerWidget {
       TradingSignal.hold => AppColors.glowAmber,
       null => AppColors.textSecondary,
     };
+  }
+
+  static AiTimeframeSnapshot? _timeframeSnapshot(
+    StrategyTradePlan? plan,
+    String label,
+  ) {
+    if (plan == null) {
+      return null;
+    }
+
+    for (final snapshot in plan.timeframeSnapshots) {
+      if (snapshot.label == label) {
+        return snapshot;
+      }
+    }
+    return null;
+  }
+
+  static Color _timeframeAccent(String regime) {
+    if (regime.startsWith('Trend Up') || regime == 'Pullback') {
+      return AppColors.positive;
+    }
+    if (regime.startsWith('Trend Down') || regime == 'Relief Bounce') {
+      return AppColors.negative;
+    }
+    if (regime == 'Squeeze' || regime == 'Range') {
+      return AppColors.glowAmber;
+    }
+    return AppColors.glowCyan;
   }
 
   static String _formatPrice(double? value) {

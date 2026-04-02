@@ -47,6 +47,16 @@ class GalleryScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _MilestoneCard(
+              version: '1.0.8',
+              date: '2026-04-02',
+              features: [
+                'Protection engine adds cooldown, loss-streak, and drawdown locks for safer auto-entry.',
+                'AI now reads market regime, portfolio posture, multi-timeframe structure, and Binance order-book depth.',
+                'Binance and AI settings now include clearer verification and apply flows with runtime status labels.',
+                'Trade history is easier to review with a bounded inner scroll and tracked-account fallback fills.',
+              ],
+            ),
+            _MilestoneCard(
               version: '1.0.7',
               date: '2026-03-20',
               features: [

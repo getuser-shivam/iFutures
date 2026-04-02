@@ -33,6 +33,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
     List<Kline> history, {
     String? symbol,
     RiskSettings? riskSettings,
+    StrategyAnalysisContext? context,
   }) async {
     final currentPrice = history.isEmpty ? 0.0 : history.last.close;
     final leverage = riskSettings?.leverage ?? 1;

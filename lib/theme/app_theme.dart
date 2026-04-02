@@ -71,7 +71,9 @@ class AppTheme {
         backgroundColor: AppColors.surfaceAlt,
         selectedColor: AppColors.glowCyan,
         secondarySelectedColor: AppColors.glowAmber,
-        labelStyle: textTheme.labelMedium?.copyWith(color: AppColors.textPrimary),
+        labelStyle: textTheme.labelMedium?.copyWith(
+          color: AppColors.textPrimary,
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         shape: const StadiumBorder(side: BorderSide(color: AppColors.border)),
       ),
@@ -86,7 +88,9 @@ class AppTheme {
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           textStyle: textTheme.labelLarge?.copyWith(
             fontWeight: FontWeight.w700,
             letterSpacing: 0.6,

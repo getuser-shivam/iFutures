@@ -24,9 +24,11 @@ class PriceChart extends ConsumerWidget {
             ),
           );
         }
-        
+
         // Use last 50 klines for the chart
-        final recentData = data.length > 50 ? data.sublist(data.length - 50) : data;
+        final recentData = data.length > 50
+            ? data.sublist(data.length - 50)
+            : data;
         final spots = recentData.asMap().entries.map((e) {
           final kline = e.value;
           return CandlestickSpot(
@@ -44,16 +46,12 @@ class PriceChart extends ConsumerWidget {
             gridData: FlGridData(
               show: true,
               drawVerticalLine: false,
-              getDrawingHorizontalLine: (value) => const FlLine(
-                color: AppColors.border,
-                strokeWidth: 1,
-              ),
+              getDrawingHorizontalLine: (value) =>
+                  const FlLine(color: AppColors.border, strokeWidth: 1),
             ),
             titlesData: const FlTitlesData(show: false),
             borderData: FlBorderData(show: false),
-            candlestickTouchData: CandlestickTouchData(
-              enabled: false,
-            ),
+            candlestickTouchData: CandlestickTouchData(enabled: false),
           ),
         );
       },

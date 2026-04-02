@@ -1,6 +1,10 @@
 import '../models/kline.dart';
+import '../models/ai_timeframe_snapshot.dart';
 import '../models/manual_order.dart';
+import '../models/order_book_snapshot.dart';
+import '../models/position.dart';
 import '../models/risk_settings.dart';
+import '../models/trade.dart';
 
 enum TradingSignal { buy, sell, hold }
 
@@ -17,8 +21,19 @@ class StrategyTradePlan {
   final DateTime generatedAt;
   final double? quantity;
   final double? confidence;
+  final double? sizeFraction;
   final double? longBiasPrice;
   final double? shortBiasPrice;
+  final String? marketRegime;
+  final String? riskPosture;
+  final String? tradeReviewState;
+  final String? timeframeAlignment;
+  final String? executionHint;
+  final double? spreadPercent;
+  final double? orderBookImbalancePercent;
+  final double? estimatedBuySlippagePercent;
+  final double? estimatedSellSlippagePercent;
+  final List<AiTimeframeSnapshot> timeframeSnapshots;
 
   const StrategyTradePlan({
     required this.strategyName,
@@ -33,8 +48,19 @@ class StrategyTradePlan {
     this.orderType,
     this.targetEntryPrice,
     this.confidence,
+    this.sizeFraction,
     this.longBiasPrice,
     this.shortBiasPrice,
+    this.marketRegime,
+    this.riskPosture,
+    this.tradeReviewState,
+    this.timeframeAlignment,
+    this.executionHint,
+    this.spreadPercent,
+    this.orderBookImbalancePercent,
+    this.estimatedBuySlippagePercent,
+    this.estimatedSellSlippagePercent,
+    this.timeframeSnapshots = const <AiTimeframeSnapshot>[],
   });
 
   factory StrategyTradePlan.hold({
@@ -46,8 +72,20 @@ class StrategyTradePlan {
     required String rationale,
     double? quantity,
     double? confidence,
+    double? sizeFraction,
     double? longBiasPrice,
     double? shortBiasPrice,
+    String? marketRegime,
+    String? riskPosture,
+    String? tradeReviewState,
+    String? timeframeAlignment,
+    String? executionHint,
+    double? spreadPercent,
+    double? orderBookImbalancePercent,
+    double? estimatedBuySlippagePercent,
+    double? estimatedSellSlippagePercent,
+    List<AiTimeframeSnapshot> timeframeSnapshots =
+        const <AiTimeframeSnapshot>[],
   }) {
     return StrategyTradePlan(
       strategyName: strategyName,
@@ -60,8 +98,19 @@ class StrategyTradePlan {
       generatedAt: DateTime.now(),
       quantity: quantity,
       confidence: confidence,
+      sizeFraction: sizeFraction,
       longBiasPrice: longBiasPrice,
       shortBiasPrice: shortBiasPrice,
+      marketRegime: marketRegime,
+      riskPosture: riskPosture,
+      tradeReviewState: tradeReviewState,
+      timeframeAlignment: timeframeAlignment,
+      executionHint: executionHint,
+      spreadPercent: spreadPercent,
+      orderBookImbalancePercent: orderBookImbalancePercent,
+      estimatedBuySlippagePercent: estimatedBuySlippagePercent,
+      estimatedSellSlippagePercent: estimatedSellSlippagePercent,
+      timeframeSnapshots: timeframeSnapshots,
     );
   }
 
@@ -124,11 +173,38 @@ class StrategyTradePlan {
       : plannedNotional! * (stopLossPercent / 100);
 }
 
+class StrategyAnalysisContext {
+  final Position? openPosition;
+  final List<Trade> symbolTrades;
+  final List<Trade> accountTrades;
+  final double? walletBalance;
+  final double? availableBalance;
+  final int? openPositionCount;
+  final DateTime? accountSyncedAt;
+  final String? accountStatusMessage;
+  final OrderBookSnapshot? orderBookSnapshot;
+  final DateTime? orderBookSyncedAt;
+
+  const StrategyAnalysisContext({
+    this.openPosition,
+    this.symbolTrades = const <Trade>[],
+    this.accountTrades = const <Trade>[],
+    this.walletBalance,
+    this.availableBalance,
+    this.openPositionCount,
+    this.accountSyncedAt,
+    this.accountStatusMessage,
+    this.orderBookSnapshot,
+    this.orderBookSyncedAt,
+  });
+}
+
 abstract class TradePlanningStrategy {
   Future<StrategyTradePlan> buildTradePlan(
     List<Kline> history, {
     String? symbol,
     RiskSettings? riskSettings,
+    StrategyAnalysisContext? context,
   });
 }
 

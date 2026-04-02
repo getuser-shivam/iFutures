@@ -57,3 +57,4 @@ list_windows*.ps1
 /screenshot_app_v*.png
 flutter_sdk/
 flutter_sdk.zip
+.codex/

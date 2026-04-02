@@ -15,6 +15,7 @@ import '../trading/strategy.dart';
 import '../constants/symbols.dart';
 import '../models/kline.dart';
 import '../models/ai_provider.dart';
+import '../models/ai_service_status.dart';
 import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
@@ -25,6 +26,7 @@ import '../models/price_alert.dart';
 import '../models/market_analysis.dart';
 import '../models/strategy_console_entry.dart';
 import '../models/strategy_mode.dart';
+import '../models/protection_status.dart';
 
 final settingsServiceProvider = Provider<SettingsService>((ref) {
   return SettingsService();
@@ -107,6 +109,14 @@ final aiStrategyProvider = FutureProvider.family<AiStrategy, String>((
     takeProfitPercent: settings.getRiskTakeProfitPercent(),
     stopLossPercent: settings.getRiskStopLossPercent(),
   );
+});
+
+final aiServiceStatusProvider = FutureProvider.family<AiServiceStatus, String>((
+  ref,
+  symbol,
+) async {
+  final strategy = await ref.watch(aiStrategyProvider(symbol).future);
+  return strategy.verifyConnection();
 });
 
 class CurrentStrategyNotifier extends StateNotifier<TradingStrategy?> {
@@ -209,6 +219,10 @@ final riskSettingsProvider = FutureProvider<RiskSettings>((ref) async {
     takeProfitPercent: settings.getRiskTakeProfitPercent(),
     tradeQuantity: settings.getRiskTradeQuantity(),
     leverage: settings.getRiskLeverage(),
+    cooldownMinutes: settings.getRiskCooldownMinutes(),
+    protectionPauseMinutes: settings.getRiskProtectionPauseMinutes(),
+    maxConsecutiveLosses: settings.getRiskMaxConsecutiveLosses(),
+    maxDrawdownPercent: settings.getRiskMaxDrawdownPercent(),
   );
 });
 
@@ -242,6 +256,7 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((
   final ws = await ref.watch(binanceWsProvider.future);
   final history = ref.watch(tradeHistoryServiceProvider);
   final riskSettings = await ref.watch(riskSettingsProvider.future);
+  final trackedSymbols = await ref.watch(symbolListProvider.future);
   final strategy = ref.watch(currentStrategyProvider);
 
   if (strategy == null) {
@@ -255,6 +270,7 @@ final tradingEngineProvider = FutureProvider.family<TradingEngine, String>((
     strategy: strategy,
     riskSettings: riskSettings,
     symbol: symbol,
+    trackedSymbols: trackedSymbols,
   );
 
   ref.onDispose(() {
@@ -308,6 +324,24 @@ final tradeStreamProvider = StreamProvider.family<List<Trade>, String>((
   }
 });
 
+final accountTradeStreamProvider = StreamProvider.family<List<Trade>, String>((
+  ref,
+  symbol,
+) async* {
+  final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+  if (engineAsync is AsyncData<TradingEngine>) {
+    final engine = engineAsync.value;
+    yield engine.accountTrades;
+    if (!engine.isStreaming) {
+      await engine.startMarketData();
+    }
+    yield* engine.accountTradeStream;
+  } else {
+    yield [];
+  }
+});
+
 final priceAlertsProvider = FutureProvider.family<List<PriceAlert>, String>((
   ref,
   symbol,
@@ -333,6 +367,22 @@ final positionStreamProvider = StreamProvider.family<Position?, String>((
     yield null;
   }
 });
+
+final protectionStatusProvider =
+    StreamProvider.family<ProtectionStatus, String>((ref, symbol) async* {
+      final engineAsync = ref.watch(tradingEngineProvider(symbol));
+
+      if (engineAsync is AsyncData<TradingEngine>) {
+        final engine = engineAsync.value;
+        yield engine.lastProtectionStatus;
+        if (!engine.isStreaming) {
+          await engine.startMarketData();
+        }
+        yield* engine.protectionStatusStream;
+      } else {
+        yield const ProtectionStatus.ready();
+      }
+    });
 
 final pendingManualOrderStreamProvider =
     StreamProvider.family<List<PendingManualOrder>, String>((
