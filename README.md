@@ -20,6 +20,8 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 - **AI Context Engine**: AI scores market regime, portfolio posture, and recent trade review before sizing a setup.
 - **Multi-Timeframe AI Alignment**: AI compares local `1m`, `5m`, and `15m` structure before choosing side and size.
 - **Binance Order-Book Context**: AI reads spread, bid/ask imbalance, and estimated market sweep cost before picking execution style.
+- **AI Outcome Memory**: AI now reviews recent realized exits and adjusts confidence when the latest outcomes are hot, mixed, or cooling off after losses.
+- **Order-Book Trend Memory**: AI tracks the last several minute-level Binance depth snapshots to detect tightening support, worsening liquidity, or persistent ask pressure.
 - **Binance Verification Workflow**: `Live Connection` / `Demo Connection` verification with clearer access checks and runtime status.
 - **AI API Verification**: Settings can verify the configured AI provider and the dashboard shows the current AI Analyst health state.
 - **Protection Engine**: Cooldown, pause window, loss-streak, and drawdown locks pause new auto entries while preserving manual override.
@@ -76,6 +78,8 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 - [x] AI context analyzer with regime detection, portfolio/trade-review posture, and dynamic AI size scaling
 - [x] Multi-timeframe AI alignment with `1m` / `5m` / `15m` context in the strategy console and prompt
 - [x] Binance order-book execution context with spread, imbalance, and estimated market slippage for AI order-type decisions
+- [x] AI decision memory that reviews recent realized exits and feeds that bias back into plan sizing
+- [x] Order-book trend memory that compares the latest several Binance depth snapshots before AI chooses execution
 - [x] Bounded trade history review with tracked-account fill fallback
 - [x] WebSocket auto-reconnect with exponential backoff and reconnect status in the UI
 - [x] Price alerts with toast notifications and rearmable dashboard cards
@@ -92,6 +96,33 @@ See [TODO.md](TODO.md) for current priorities and upcoming work.
 flutter build windows
 flutter run -d windows
 ```
+
+### Web
+```bash
+flutter build web --release --base-href /iFutures/ --no-wasm-dry-run
+flutter run -d chrome
+```
+
+## Free Public Web Hosting
+
+This repo is now set up for free public hosting with GitHub Pages.
+
+- **Workflow:** [deploy_web.yml](.github/workflows/deploy_web.yml)
+- **Public URL after deployment:** `https://getuser-shivam.github.io/iFutures/`
+- **Hosting cost:** free on GitHub Pages for a public repository
+
+### One-time GitHub setup
+
+1. Push `main` to GitHub.
+2. Open the repository Settings.
+3. Go to `Pages`.
+4. Set the source to `GitHub Actions`.
+
+After that, each push to `main` will build Flutter Web and deploy the site automatically.
+
+### Important Web Note
+
+The web build is fine for public monitoring, charting, and demo access. For real live trading, a browser-hosted app is a weaker place to handle Binance and AI secrets than a desktop build or backend service, so treat the public web site as a public client, not a private trading terminal.
 
 ### macOS
 ```bash

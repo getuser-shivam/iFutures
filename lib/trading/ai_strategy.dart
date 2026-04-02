@@ -3,15 +3,18 @@ import 'dart:convert';
 import 'package:dio/dio.dart';
 import '../models/ai_context_snapshot.dart';
 import '../models/ai_service_status.dart';
+import '../models/ai_trade_outcome_snapshot.dart';
 import '../models/ai_timeframe_snapshot.dart';
 import '../models/kline.dart';
 import '../models/ai_provider.dart';
 import '../models/manual_order.dart';
 import '../models/order_book_snapshot.dart';
+import '../models/order_book_trend_snapshot.dart';
 import '../models/risk_settings.dart';
 import '../services/ai_context_analyzer.dart';
 import '../services/ai_multi_timeframe_analyzer.dart';
 import '../services/performance_summary_calculator.dart';
+import '../services/trade_outcome_analyzer.dart';
 import 'strategy.dart';
 
 class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
@@ -189,6 +192,9 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     );
     final multiTimeframeSnapshot = AiMultiTimeframeAnalyzer.analyze(history);
     final orderBookSnapshot = context?.orderBookSnapshot;
+    final orderBookTrendSnapshot = context?.orderBookTrendSnapshot;
+    final recentTradeOutcomes =
+        context?.recentTradeOutcomes ?? const <AiTradeOutcomeSnapshot>[];
 
     final prompt = _buildPrompt(
       history,
@@ -200,6 +206,8 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       contextSnapshot: contextSnapshot,
       multiTimeframeSnapshot: multiTimeframeSnapshot,
       orderBookSnapshot: orderBookSnapshot,
+      orderBookTrendSnapshot: orderBookTrendSnapshot,
+      recentTradeOutcomes: recentTradeOutcomes,
       context: context,
     );
 
@@ -259,9 +267,14 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         signal: signal,
         multiTimeframeSnapshot: multiTimeframeSnapshot,
       );
-      final microstructureAdjustedSizeFraction = _orderBookAdjustedSizeFraction(
+      final feedbackAdjustedSizeFraction = _feedbackAdjustedSizeFraction(
         alignedSizeFraction,
+        recentTradeOutcomes: recentTradeOutcomes,
+      );
+      final microstructureAdjustedSizeFraction = _orderBookAdjustedSizeFraction(
+        feedbackAdjustedSizeFraction,
         orderBookSnapshot: orderBookSnapshot,
+        orderBookTrendSnapshot: orderBookTrendSnapshot,
       );
       final plannedQuantity = _plannedQuantity(
         signal: signal,
@@ -288,6 +301,14 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
           payload['executionHint']?.toString().trim().isNotEmpty == true
           ? payload['executionHint'].toString().trim()
           : orderBookSnapshot?.executionHint;
+      final orderBookTrendLabel =
+          payload['orderBookTrendLabel']?.toString().trim().isNotEmpty == true
+          ? payload['orderBookTrendLabel'].toString().trim()
+          : orderBookTrendSnapshot?.trendLabel;
+      final recentOutcomeLabel =
+          payload['recentOutcomeLabel']?.toString().trim().isNotEmpty == true
+          ? payload['recentOutcomeLabel'].toString().trim()
+          : _recentOutcomeLabel(recentTradeOutcomes);
       final rationale = payload['reason']?.toString().trim().isNotEmpty == true
           ? payload['reason'].toString().trim()
           : _fallbackReason(
@@ -296,6 +317,8 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
               contextSnapshot: contextSnapshot,
               multiTimeframeSnapshot: multiTimeframeSnapshot,
               orderBookSnapshot: orderBookSnapshot,
+              orderBookTrendSnapshot: orderBookTrendSnapshot,
+              recentTradeOutcomes: recentTradeOutcomes,
             );
 
       return StrategyTradePlan(
@@ -319,6 +342,8 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         tradeReviewState: tradeReviewState,
         timeframeAlignment: timeframeAlignment,
         executionHint: executionHint,
+        orderBookTrendLabel: orderBookTrendLabel,
+        recentOutcomeLabel: recentOutcomeLabel,
         spreadPercent: orderBookSnapshot?.spreadPercent,
         orderBookImbalancePercent: orderBookSnapshot?.imbalancePercent,
         estimatedBuySlippagePercent:
@@ -350,6 +375,8 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         tradeReviewState: contextSnapshot.tradeReviewState,
         timeframeAlignment: multiTimeframeSnapshot.alignment,
         executionHint: orderBookSnapshot?.executionHint,
+        orderBookTrendLabel: orderBookTrendSnapshot?.trendLabel,
+        recentOutcomeLabel: _recentOutcomeLabel(recentTradeOutcomes),
         spreadPercent: orderBookSnapshot?.spreadPercent,
         orderBookImbalancePercent: orderBookSnapshot?.imbalancePercent,
         estimatedBuySlippagePercent:
@@ -487,6 +514,8 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     required AiContextSnapshot contextSnapshot,
     required AiMultiTimeframeSnapshot multiTimeframeSnapshot,
     required OrderBookSnapshot? orderBookSnapshot,
+    required OrderBookTrendSnapshot? orderBookTrendSnapshot,
+    required List<AiTradeOutcomeSnapshot> recentTradeOutcomes,
     StrategyAnalysisContext? context,
   }) {
     final recent = history.length > 10
@@ -518,14 +547,22 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       multiTimeframeSnapshot,
     );
     final orderBookContext = _buildOrderBookSummary(orderBookSnapshot);
+    final orderBookTrendContext = _buildOrderBookTrendSummary(
+      orderBookTrendSnapshot,
+    );
+    final recentOutcomeContext = _buildOutcomeMemorySummary(
+      recentTradeOutcomes,
+    );
     final portfolioRules = context == null
         ? '- Portfolio and trade-history context is not available for this request.'
         : '- Factor in recent realized performance, current exposure, and remaining available balance before choosing side, leverage, and order type.\n'
               '- If the recent trade review shows repeated losses or the account is already heavily exposed, reduce aggression or prefer HOLD.\n'
+              '- If recent outcome memory shows back-to-back losing exits or stop losses, reduce size or stay flat unless the setup is unusually clean.\n'
               '- Use MARKET only when momentum is strong, LIMIT/POST_ONLY when price is near a planned level, and SCALED when volatility is wide enough to justify staged execution.\n'
               '- Choose a sizeFraction between 0.15 and 1.0 for actionable trades. Treat the configured quantity as the max size, not a mandatory full-size trade.\n'
               '- Respect multi-timeframe alignment. If 1m, 5m, and 15m disagree, reduce size or prefer HOLD over forcing a trade.\n'
-              '- Respect Binance order book conditions. Wide spread or high market slippage should push you toward LIMIT, POST_ONLY, or SCALED entries instead of MARKET.';
+              '- Respect Binance order book conditions. Wide spread or high market slippage should push you toward LIMIT, POST_ONLY, or SCALED entries instead of MARKET.\n'
+              '- Respect short-term book trend context. If liquidity is worsening or ask pressure is building, avoid aggressive long entries. If bid support keeps tightening, patient long entries are acceptable.';
 
     return """
 Analyze the following candlestick data for $targetSymbol and provide a trading decision.
@@ -542,7 +579,7 @@ Trader rules:
 - If price is between the long and short zones with no clear edge, prefer HOLD.
 - $portfolioRules
 - Return JSON only with:
-  {"decision":"BUY|SELL|HOLD","direction":"LONG|SHORT|NONE","orderType":"MARKET|LIMIT|POST_ONLY|SCALED","leverage":number,"takeProfitPercent":number,"stopLossPercent":number,"sizeFraction":0.0,"confidence":0.0,"marketRegime":"short label","riskPosture":"short label","tradeReviewState":"short label","timeframeAlignment":"short label","reason":"short reason that references both market and portfolio context"}
+  {"decision":"BUY|SELL|HOLD","direction":"LONG|SHORT|NONE","orderType":"MARKET|LIMIT|POST_ONLY|SCALED","leverage":number,"takeProfitPercent":number,"stopLossPercent":number,"sizeFraction":0.0,"confidence":0.0,"marketRegime":"short label","riskPosture":"short label","tradeReviewState":"short label","timeframeAlignment":"short label","orderBookTrendLabel":"short label","recentOutcomeLabel":"short label","reason":"short reason that references market, portfolio, recent outcomes, and execution context"}
 
 Portfolio snapshot:
 $accountSummary
@@ -558,6 +595,12 @@ $multiTimeframeContext
 
 Order book context:
 $orderBookContext
+
+Order book trend memory:
+$orderBookTrendContext
+
+Recent outcome memory:
+$recentOutcomeContext
 
 Data:
 $data
@@ -605,6 +648,36 @@ $data
         '- Estimated market sell slippage: ${snapshot.estimatedSellSlippagePercent?.toStringAsFixed(4) ?? '--'}%\n'
         '- Execution hint: ${snapshot.executionHint}\n'
         '- Captured at: ${snapshot.capturedAt}';
+  }
+
+  String _buildOrderBookTrendSummary(OrderBookTrendSnapshot? snapshot) {
+    if (snapshot == null) {
+      return 'Order book trend memory unavailable.';
+    }
+
+    return '- Samples: ${snapshot.sampleCount}\n'
+        '- Trend label: ${snapshot.trendLabel}\n'
+        '- Average spread: ${snapshot.averageSpreadPercent?.toStringAsFixed(4) ?? '--'}%\n'
+        '- Spread drift: ${snapshot.spreadDriftPercent.toStringAsFixed(4)}%\n'
+        '- Average imbalance: ${snapshot.averageImbalancePercent.toStringAsFixed(1)}%\n'
+        '- Imbalance drift: ${snapshot.imbalanceDriftPercent.toStringAsFixed(1)}%\n'
+        '- Average worst slippage: ${snapshot.averageWorstSlippagePercent?.toStringAsFixed(4) ?? '--'}%';
+  }
+
+  String _buildOutcomeMemorySummary(List<AiTradeOutcomeSnapshot> outcomes) {
+    if (outcomes.isEmpty) {
+      return 'Recent closed-trade memory unavailable.';
+    }
+
+    final lines = outcomes
+        .map(
+          (outcome) =>
+              '- ${outcome.outcomeLabel} ${outcome.positionSideLabel} ${outcome.symbol} '
+              '${outcome.realizedPnl >= 0 ? '+' : ''}${outcome.realizedPnl.toStringAsFixed(4)} '
+              'via ${outcome.reason} (${outcome.strategy})',
+        )
+        .join('\n');
+    return '- Review bias: ${TradeOutcomeAnalyzer.summarizeBias(outcomes)}\n$lines';
   }
 
   String _buildAccountSummary(
@@ -761,18 +834,25 @@ $data
     required AiContextSnapshot contextSnapshot,
     required AiMultiTimeframeSnapshot multiTimeframeSnapshot,
     required OrderBookSnapshot? orderBookSnapshot,
+    required OrderBookTrendSnapshot? orderBookTrendSnapshot,
+    required List<AiTradeOutcomeSnapshot> recentTradeOutcomes,
   }) {
     final bookNote = orderBookSnapshot == null
         ? 'without live book depth'
         : 'with ${orderBookSnapshot.executionHint.toLowerCase()}';
+    final trendNote = orderBookTrendSnapshot == null
+        ? 'no short-term book trend memory'
+        : orderBookTrendSnapshot.trendLabel.toLowerCase();
+    final outcomeNote = _recentOutcomeLabel(recentTradeOutcomes).toLowerCase();
     return switch (signal) {
-      TradingSignal.buy =>
-        'AI favors a long plan in a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${multiTimeframeSnapshot.alignment.toLowerCase()}, ${contextSnapshot.riskPosture.toLowerCase()} risk posture, $bookNote, and ${orderType?.label ?? 'watching'} execution.',
-      TradingSignal.sell =>
-        'AI favors a short plan in a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${multiTimeframeSnapshot.alignment.toLowerCase()}, ${contextSnapshot.riskPosture.toLowerCase()} risk posture, $bookNote, and ${orderType?.label ?? 'watching'} execution.',
-      TradingSignal.hold =>
-        'AI sees ${multiTimeframeSnapshot.alignment.toLowerCase()} across a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${contextSnapshot.tradeReviewState.toLowerCase()} trade review and $bookNote, so it prefers to wait.',
-    };
+          TradingSignal.buy =>
+            'AI favors a long plan in a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${multiTimeframeSnapshot.alignment.toLowerCase()}, ${contextSnapshot.riskPosture.toLowerCase()} risk posture, $bookNote, and ${orderType?.label ?? 'watching'} execution.',
+          TradingSignal.sell =>
+            'AI favors a short plan in a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${multiTimeframeSnapshot.alignment.toLowerCase()}, ${contextSnapshot.riskPosture.toLowerCase()} risk posture, $bookNote, and ${orderType?.label ?? 'watching'} execution.',
+          TradingSignal.hold =>
+            'AI sees ${multiTimeframeSnapshot.alignment.toLowerCase()} across a ${contextSnapshot.marketRegime.toLowerCase()} regime with ${contextSnapshot.tradeReviewState.toLowerCase()} trade review and $bookNote, so it prefers to wait.',
+        } +
+        ' Book trend reads as $trendNote, and recent outcome memory is $outcomeNote.';
   }
 
   double _parseSizeFraction(
@@ -823,21 +903,54 @@ $data
     return adjusted.clamp(0.15, 1.0).toDouble();
   }
 
-  double _orderBookAdjustedSizeFraction(
+  double _feedbackAdjustedSizeFraction(
     double sizeFraction, {
-    required OrderBookSnapshot? orderBookSnapshot,
+    required List<AiTradeOutcomeSnapshot> recentTradeOutcomes,
   }) {
-    if (orderBookSnapshot == null) {
+    if (recentTradeOutcomes.isEmpty) {
       return sizeFraction;
     }
 
     var adjusted = sizeFraction;
-    final spread = orderBookSnapshot.spreadPercent ?? 0.0;
+    final bias = TradeOutcomeAnalyzer.summarizeBias(recentTradeOutcomes);
+    switch (bias) {
+      case 'Cooling after stop losses':
+        adjusted -= 0.20;
+        break;
+      case 'Defensive after losses':
+        adjusted -= 0.12;
+        break;
+      case 'Pressing recent edge':
+        adjusted += 0.06;
+        break;
+      case 'Constructive recent outcomes':
+        adjusted += 0.03;
+        break;
+      case 'Mixed recent outcomes':
+      case 'Cautious review':
+      case 'Unproven':
+        break;
+    }
+
+    return adjusted.clamp(0.15, 1.0).toDouble();
+  }
+
+  double _orderBookAdjustedSizeFraction(
+    double sizeFraction, {
+    required OrderBookSnapshot? orderBookSnapshot,
+    required OrderBookTrendSnapshot? orderBookTrendSnapshot,
+  }) {
+    if (orderBookSnapshot == null && orderBookTrendSnapshot == null) {
+      return sizeFraction;
+    }
+
+    var adjusted = sizeFraction;
+    final spread = orderBookSnapshot?.spreadPercent ?? 0.0;
     final worstSlippage =
-        (orderBookSnapshot.estimatedBuySlippagePercent ?? 0.0) >
-            (orderBookSnapshot.estimatedSellSlippagePercent ?? 0.0)
-        ? (orderBookSnapshot.estimatedBuySlippagePercent ?? 0.0)
-        : (orderBookSnapshot.estimatedSellSlippagePercent ?? 0.0);
+        (orderBookSnapshot?.estimatedBuySlippagePercent ?? 0.0) >
+            (orderBookSnapshot?.estimatedSellSlippagePercent ?? 0.0)
+        ? (orderBookSnapshot?.estimatedBuySlippagePercent ?? 0.0)
+        : (orderBookSnapshot?.estimatedSellSlippagePercent ?? 0.0);
 
     if (spread >= 0.12 || worstSlippage >= 0.18) {
       adjusted -= 0.20;
@@ -847,7 +960,32 @@ $data
       adjusted += 0.05;
     }
 
+    if (orderBookTrendSnapshot != null) {
+      switch (orderBookTrendSnapshot.trendLabel) {
+        case 'Tightening bid support':
+        case 'Persistent bid support':
+          adjusted += 0.05;
+          break;
+        case 'Liquidity worsening':
+        case 'Widening with ask pressure':
+        case 'Persistent ask pressure':
+          adjusted -= 0.10;
+          break;
+        case 'Widening with bid pressure':
+          adjusted -= 0.03;
+          break;
+        case 'Tightening ask pressure':
+        case 'Stable balanced book':
+        case 'Mixed intraminute book':
+          break;
+      }
+    }
+
     return adjusted.clamp(0.15, 1.0).toDouble();
+  }
+
+  String _recentOutcomeLabel(List<AiTradeOutcomeSnapshot> recentTradeOutcomes) {
+    return TradeOutcomeAnalyzer.summarizeBias(recentTradeOutcomes);
   }
 
   double? _plannedQuantity({

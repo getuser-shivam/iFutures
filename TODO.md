@@ -3,14 +3,18 @@
 Last updated: 2026-04-02
 
 ## Now
-- [ ] AI decision feedback memory with outcome review and confidence calibration.
-- [ ] Order-book trend history so AI can compare the last several minutes of spread, imbalance, and sweep cost.
+- [ ] Portfolio analytics dashboard.
+- [ ] AI-to-manual ticket prefills so the latest plan can be reviewed and executed faster.
 
 ## Next
-- [ ] Portfolio analytics dashboard.
 - [ ] Multi-exchange support (Binance + Coinbase).
+- [ ] AI confidence backtesting and scorecards.
+- [ ] Add a public web dashboard mode with clearer browser-only safety messaging.
 
 ## Done
+- [x] GitHub Pages workflow for free public Flutter Web hosting on `getuser-shivam.github.io/iFutures`.
+- [x] AI decision feedback memory with outcome review and confidence calibration.
+- [x] Order-book trend history so AI can compare the last several minutes of spread, imbalance, and sweep cost.
 - [x] Binance and AI verification workflow with `Live Connection` / `Demo Connection`, direct apply/save actions, and runtime status labels.
 - [x] Trade history card now uses a bounded inner scroll and falls back to tracked-account fills when the selected symbol has no recent Binance trades.
 - [x] Binance order-book execution context with spread, imbalance, and market-impact estimates for AI order-type decisions.

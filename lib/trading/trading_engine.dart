@@ -6,12 +6,16 @@ import '../models/risk_settings.dart';
 import '../models/position.dart';
 import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
+import '../models/ai_trade_outcome_snapshot.dart';
 import '../models/order_book_snapshot.dart';
+import '../models/order_book_trend_snapshot.dart';
 import '../models/protection_status.dart';
 import '../models/strategy_console_entry.dart';
 import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/order_book_analyzer.dart';
+import '../services/order_book_trend_analyzer.dart';
+import '../services/trade_outcome_analyzer.dart';
 import '../services/trade_history_service.dart';
 import 'strategy.dart';
 
@@ -45,6 +49,7 @@ class TradingEngine {
   double? _availableBalance;
   int? _openPositionCount;
   OrderBookSnapshot? _orderBookSnapshot;
+  List<OrderBookSnapshot> _orderBookHistory = [];
   DateTime? _orderBookSyncedAt;
   DateTime? _cooldownUntil;
   DateTime? _protectionLockUntil;
@@ -111,6 +116,14 @@ class TradingEngine {
   double? get walletBalance => _walletBalance;
   double? get availableBalance => _availableBalance;
   int? get openPositionCount => _openPositionCount;
+  List<OrderBookSnapshot> get orderBookHistory =>
+      List.unmodifiable(_orderBookHistory);
+  OrderBookTrendSnapshot? get orderBookTrendSnapshot =>
+      OrderBookTrendAnalyzer.analyze(_orderBookHistory);
+  List<AiTradeOutcomeSnapshot> get recentTradeOutcomes =>
+      TradeOutcomeAnalyzer.analyze(
+        _accountTrades.isNotEmpty ? _accountTrades : _trades,
+      );
   ProtectionStatus get lastProtectionStatus => _protectionStatus;
   List<PendingManualOrder> get pendingManualOrders =>
       List.unmodifiable(_pendingManualOrders);
@@ -256,6 +269,8 @@ class TradingEngine {
   Future<void> _evaluateStrategy() async {
     try {
       await _refreshOrderBookContextIfNeeded();
+      final orderBookTrendSnapshot = this.orderBookTrendSnapshot;
+      final recentTradeOutcomes = this.recentTradeOutcomes;
       StrategyTradePlan? plan;
       final strategyCandidate = strategy;
       late final TradingSignal signal;
@@ -275,6 +290,11 @@ class TradingEngine {
             accountStatusMessage: _binanceAccountStatus.message,
             orderBookSnapshot: _orderBookSnapshot,
             orderBookSyncedAt: _orderBookSyncedAt,
+            orderBookHistory: List<OrderBookSnapshot>.unmodifiable(
+              _orderBookHistory,
+            ),
+            orderBookTrendSnapshot: orderBookTrendSnapshot,
+            recentTradeOutcomes: recentTradeOutcomes,
           ),
         );
         signal = plan.signal;
@@ -940,7 +960,14 @@ class TradingEngine {
       );
       final previousCapturedAt = _orderBookSyncedAt;
       _orderBookSnapshot = snapshot;
+      _orderBookHistory = [..._orderBookHistory, snapshot];
+      if (_orderBookHistory.length > 8) {
+        _orderBookHistory = _orderBookHistory.sublist(
+          _orderBookHistory.length - 8,
+        );
+      }
       _orderBookSyncedAt = now;
+      final trendSnapshot = orderBookTrendSnapshot;
 
       if (previousCapturedAt == null ||
           now.difference(previousCapturedAt) >= const Duration(minutes: 1)) {
@@ -949,7 +976,8 @@ class TradingEngine {
           'imbalance ${snapshot.imbalancePercent.toStringAsFixed(1)}%, '
           'buy slip ${snapshot.estimatedBuySlippagePercent?.toStringAsFixed(4) ?? '--'}%, '
           'sell slip ${snapshot.estimatedSellSlippagePercent?.toStringAsFixed(4) ?? '--'}%. '
-          '${snapshot.executionHint}.',
+          '${snapshot.executionHint}. '
+          '${trendSnapshot?.trendLabel ?? 'Book trend unavailable.'}',
         );
       }
     } catch (e) {

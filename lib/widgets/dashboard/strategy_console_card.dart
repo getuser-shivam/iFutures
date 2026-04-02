@@ -149,6 +149,11 @@ class StrategyConsoleCard extends ConsumerWidget {
                   label: 'Book: ${plan!.executionHint!}',
                   color: AppColors.glowAmber,
                 ),
+              if (plan?.orderBookTrendLabel?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Trend: ${plan!.orderBookTrendLabel!}',
+                  color: AppColors.textPrimary,
+                ),
               if (plan?.marketRegime?.trim().isNotEmpty == true)
                 StatusPill(
                   label: 'Regime: ${plan!.marketRegime!}',
@@ -158,6 +163,11 @@ class StrategyConsoleCard extends ConsumerWidget {
                 StatusPill(
                   label: 'Risk: ${plan!.riskPosture!}',
                   color: AppColors.glowAmber,
+                ),
+              if (plan?.recentOutcomeLabel?.trim().isNotEmpty == true)
+                StatusPill(
+                  label: 'Memory: ${plan!.recentOutcomeLabel!}',
+                  color: AppColors.glowCyan,
                 ),
             ],
           ),
@@ -351,6 +361,18 @@ class StrategyConsoleCard extends ConsumerWidget {
                       ? '--'
                       : '${plan!.estimatedSellSlippagePercent!.toStringAsFixed(4)}%',
                   helper: 'Est. market sell impact',
+                  accent: AppColors.glowCyan,
+                ),
+                _ConsoleMetric(
+                  label: 'Book Trend',
+                  value: plan?.orderBookTrendLabel ?? '--',
+                  helper: 'Last few minute-level snapshots',
+                  accent: AppColors.textPrimary,
+                ),
+                _ConsoleMetric(
+                  label: 'Outcome Memory',
+                  value: plan?.recentOutcomeLabel ?? '--',
+                  helper: 'Recent realized feedback loop',
                   accent: AppColors.glowCyan,
                 ),
                 if (oneMinute != null)

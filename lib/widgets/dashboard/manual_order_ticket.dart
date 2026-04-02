@@ -139,6 +139,9 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     final engine = engineAsync.valueOrNull;
     final currentStrategy = ref.watch(currentStrategyProvider);
     final signalAsync = ref.watch(signalStreamProvider(widget.symbol));
+    final latestPlanAsync = ref.watch(
+      decisionPlanStreamProvider(widget.symbol),
+    );
     final riskAsync = ref.watch(riskSettingsProvider);
     final positionAsync = ref.watch(positionStreamProvider(widget.symbol));
     final tickerAsync = ref.watch(tickerStreamProvider(widget.symbol));
@@ -156,6 +159,7 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
       data: (orders) => orders,
       orElse: () => const <PendingManualOrder>[],
     );
+    final latestPlan = latestPlanAsync.valueOrNull;
     final suggestedQuantity = _suggestedQuantity(position, risk);
     _syncSuggestedQuantity(suggestedQuantity);
     final ticketQuantity =
@@ -225,6 +229,10 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
               ),
             ],
           ),
+          if (latestPlan != null) ...[
+            const SizedBox(height: 12),
+            _buildLatestPlanCard(latestPlan),
+          ],
           const SizedBox(height: 16),
           _TicketSection(
             label: 'Action',
@@ -521,6 +529,117 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     );
   }
 
+  Widget _buildLatestPlanCard(StrategyTradePlan plan) {
+    final suggestedAction = _planSuggestedAction(plan);
+    final hasPrefill = plan.isActionable && suggestedAction != null;
+    final generatedLabel = _relativePlanTime(plan.generatedAt);
+    final confidenceLabel = plan.confidence == null
+        ? '--'
+        : '${(plan.confidence! * 100).round()}%';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceAlt,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.auto_awesome_outlined,
+                size: 16,
+                color: AppColors.glowCyan,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Latest ${plan.strategyName} Plan',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                generatedLabel,
+                style: const TextStyle(
+                  color: AppColors.textMuted,
+                  fontSize: 11,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Load the current AI or ALGO decision into the ticket, then adjust anything you want before submitting.',
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 11),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              StatusPill(
+                label: plan.summaryLabel,
+                color: _planSignalColor(plan.signal),
+              ),
+              StatusPill(
+                label: 'Qty ${_formatQuantity(plan.quantity)}',
+                color: AppColors.glowAmber,
+              ),
+              StatusPill(
+                label:
+                    'Entry ${_formatPrice(plan.targetEntryPrice ?? plan.currentPrice)}',
+                color: AppColors.glowCyan,
+              ),
+              StatusPill(
+                label: 'Confidence $confidenceLabel',
+                color: AppColors.textSecondary,
+              ),
+              if ((plan.orderBookTrendLabel ?? '').trim().isNotEmpty)
+                StatusPill(
+                  label: plan.orderBookTrendLabel!,
+                  color: AppColors.glowAmber,
+                ),
+              if ((plan.recentOutcomeLabel ?? '').trim().isNotEmpty)
+                StatusPill(
+                  label: plan.recentOutcomeLabel!,
+                  color: AppColors.textSecondary,
+                ),
+            ],
+          ),
+          if (plan.executionHint != null &&
+              plan.executionHint!.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: Text(
+                'Execution note: ${plan.executionHint!}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                ),
+              ),
+            ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: hasPrefill ? () => _applyPlanPrefill(plan) : null,
+            icon: Icon(
+              hasPrefill
+                  ? Icons.south_west_outlined
+                  : Icons.pause_circle_outline,
+              size: 16,
+            ),
+            label: Text(hasPrefill ? 'USE LATEST PLAN' : 'PLAN IS HOLD'),
+          ),
+        ],
+      ),
+    );
+  }
+
   String _strategyLabel(TradingStrategy strategy) {
     if (strategy is RsiStrategy) {
       final settings = ref.read(settingsServiceProvider);
@@ -580,6 +699,14 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     };
   }
 
+  Color _planSignalColor(TradingSignal signal) {
+    return switch (signal) {
+      TradingSignal.buy => AppColors.positive,
+      TradingSignal.sell => AppColors.negative,
+      TradingSignal.hold => AppColors.textSecondary,
+    };
+  }
+
   IconData _actionIcon(ManualOrderAction action) {
     return switch (action) {
       ManualOrderAction.openLong => Icons.arrow_upward,
@@ -596,6 +723,76 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
       return position.quantity;
     }
     return riskSettings?.tradeQuantity;
+  }
+
+  ManualOrderAction? _planSuggestedAction(StrategyTradePlan plan) {
+    return switch (plan.signal) {
+      TradingSignal.buy => ManualOrderAction.openLong,
+      TradingSignal.sell => ManualOrderAction.openShort,
+      TradingSignal.hold => null,
+    };
+  }
+
+  void _applyPlanPrefill(StrategyTradePlan plan) {
+    final suggestedAction = _planSuggestedAction(plan);
+    if (suggestedAction == null) {
+      showAppToast(
+        context,
+        'The latest plan is HOLD, so there is nothing actionable to preload.',
+        backgroundColor: AppColors.warning.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.pause_circle_outline,
+      );
+      return;
+    }
+
+    final nextOrderType = plan.orderType ?? ManualOrderType.limit;
+    final referencePrice = plan.targetEntryPrice ?? plan.currentPrice;
+    final quantityText = _formatEditableNumber(plan.quantity);
+    final priceText = nextOrderType == ManualOrderType.market
+        ? ''
+        : _formatEditableNumber(referencePrice) ?? '';
+    final scaleEndText = nextOrderType == ManualOrderType.scaled
+        ? (_formatEditableNumber(_deriveScaledEndPrice(plan, referencePrice)) ??
+              '')
+        : '';
+
+    setState(() {
+      _selectedAction = suggestedAction;
+      _selectedOrderType = nextOrderType;
+
+      if (quantityText != null && quantityText.isNotEmpty) {
+        _quantityController.value = TextEditingValue(
+          text: quantityText,
+          selection: TextSelection.collapsed(offset: quantityText.length),
+        );
+      }
+
+      _priceController.value = TextEditingValue(
+        text: priceText,
+        selection: TextSelection.collapsed(offset: priceText.length),
+      );
+      _scaleEndController.value = TextEditingValue(
+        text: scaleEndText,
+        selection: TextSelection.collapsed(offset: scaleEndText.length),
+      );
+      final scaleStepsText = _scaleStepsController.text.trim().isEmpty
+          ? '3'
+          : _scaleStepsController.text.trim();
+      _scaleStepsController.value = TextEditingValue(
+        text: scaleStepsText,
+        selection: TextSelection.collapsed(offset: scaleStepsText.length),
+      );
+      _lastSuggestedQuantityText = null;
+    });
+
+    showAppToast(
+      context,
+      'Loaded ${plan.strategyName} plan into the manual ticket.',
+      backgroundColor: AppColors.glowCyan.withValues(alpha: 0.95),
+      foregroundColor: Colors.white,
+      icon: Icons.auto_awesome_outlined,
+    );
   }
 
   double? _ticketPreviewPrice(double? livePrice) {
@@ -617,6 +814,16 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
       return null;
     }
     return (start + end) / 2;
+  }
+
+  double _deriveScaledEndPrice(StrategyTradePlan plan, double referencePrice) {
+    final spanPercent = ((plan.spreadPercent ?? 0.0) * 2).clamp(0.15, 0.60);
+    final spanFactor = spanPercent / 100;
+    return switch (plan.signal) {
+      TradingSignal.buy => referencePrice * (1 - spanFactor),
+      TradingSignal.sell => referencePrice * (1 + spanFactor),
+      TradingSignal.hold => referencePrice,
+    };
   }
 
   String _previewLabel() {
@@ -704,6 +911,20 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
         ? 3
         : 6;
     return '${value.toStringAsFixed(digits)} USDT';
+  }
+
+  String _relativePlanTime(DateTime generatedAt) {
+    final difference = DateTime.now().difference(generatedAt);
+    if (difference.inSeconds < 60) {
+      return 'just now';
+    }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    }
+    return '${difference.inDays}d ago';
   }
 }
 

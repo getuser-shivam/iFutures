@@ -1,7 +1,9 @@
+import '../models/ai_trade_outcome_snapshot.dart';
 import '../models/kline.dart';
 import '../models/ai_timeframe_snapshot.dart';
 import '../models/manual_order.dart';
 import '../models/order_book_snapshot.dart';
+import '../models/order_book_trend_snapshot.dart';
 import '../models/position.dart';
 import '../models/risk_settings.dart';
 import '../models/trade.dart';
@@ -29,6 +31,8 @@ class StrategyTradePlan {
   final String? tradeReviewState;
   final String? timeframeAlignment;
   final String? executionHint;
+  final String? orderBookTrendLabel;
+  final String? recentOutcomeLabel;
   final double? spreadPercent;
   final double? orderBookImbalancePercent;
   final double? estimatedBuySlippagePercent;
@@ -56,6 +60,8 @@ class StrategyTradePlan {
     this.tradeReviewState,
     this.timeframeAlignment,
     this.executionHint,
+    this.orderBookTrendLabel,
+    this.recentOutcomeLabel,
     this.spreadPercent,
     this.orderBookImbalancePercent,
     this.estimatedBuySlippagePercent,
@@ -80,6 +86,8 @@ class StrategyTradePlan {
     String? tradeReviewState,
     String? timeframeAlignment,
     String? executionHint,
+    String? orderBookTrendLabel,
+    String? recentOutcomeLabel,
     double? spreadPercent,
     double? orderBookImbalancePercent,
     double? estimatedBuySlippagePercent,
@@ -106,6 +114,8 @@ class StrategyTradePlan {
       tradeReviewState: tradeReviewState,
       timeframeAlignment: timeframeAlignment,
       executionHint: executionHint,
+      orderBookTrendLabel: orderBookTrendLabel,
+      recentOutcomeLabel: recentOutcomeLabel,
       spreadPercent: spreadPercent,
       orderBookImbalancePercent: orderBookImbalancePercent,
       estimatedBuySlippagePercent: estimatedBuySlippagePercent,
@@ -184,6 +194,9 @@ class StrategyAnalysisContext {
   final String? accountStatusMessage;
   final OrderBookSnapshot? orderBookSnapshot;
   final DateTime? orderBookSyncedAt;
+  final List<OrderBookSnapshot> orderBookHistory;
+  final OrderBookTrendSnapshot? orderBookTrendSnapshot;
+  final List<AiTradeOutcomeSnapshot> recentTradeOutcomes;
 
   const StrategyAnalysisContext({
     this.openPosition,
@@ -196,6 +209,9 @@ class StrategyAnalysisContext {
     this.accountStatusMessage,
     this.orderBookSnapshot,
     this.orderBookSyncedAt,
+    this.orderBookHistory = const <OrderBookSnapshot>[],
+    this.orderBookTrendSnapshot,
+    this.recentTradeOutcomes = const <AiTradeOutcomeSnapshot>[],
   });
 }
 

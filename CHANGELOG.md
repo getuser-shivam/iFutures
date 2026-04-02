@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+### Added
+- GitHub Pages deployment workflow for free public Flutter Web hosting.
+
+### Changed
+- Updated the web app metadata and README deployment instructions for the public web target.
+
 ## [1.0.8] - 2026-04-02
 ### Added
 - Protection engine controls with cooldown, pause-window, loss-streak, and drawdown locks.
