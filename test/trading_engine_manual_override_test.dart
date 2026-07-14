@@ -73,6 +73,8 @@ class _FakeBinanceApiService extends BinanceApiService {
     required String symbol,
     String interval = '1m',
     int? limit,
+    int? startTime,
+    int? endTime,
   }) async {
     return [_klineJson(0, 1.0), _klineJson(1, 1.1), _klineJson(2, 1.2)];
   }

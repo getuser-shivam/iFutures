@@ -195,9 +195,23 @@ class DashboardScreen extends ConsumerWidget {
                             ],
                           ),
                           const SizedBox(height: 12),
-                          SizedBox(
-                            height: 420,
-                            child: PriceChart(symbol: symbol),
+                          LayoutBuilder(
+                            builder: (context, constraints) {
+                              final chartHeight =
+                                  switch (constraints.maxWidth) {
+                                    < 420 => 1050.0,
+                                    < 600 => 880.0,
+                                    < 900 => 700.0,
+                                    _ => 620.0,
+                                  };
+                              return SizedBox(
+                                height: chartHeight,
+                                child: PriceChart(
+                                  key: ValueKey('price-chart-$symbol'),
+                                  symbol: symbol,
+                                ),
+                              );
+                            },
                           ),
                         ],
                       ),
@@ -527,7 +541,7 @@ class DashboardScreen extends ConsumerWidget {
         AiServiceState.attentionRequired => 'Attention',
       },
       loading: () => 'Checking',
-      error: (_, __) => 'Error',
+      error: (_, _) => 'Error',
     );
 
     return '$strategyName: $suffix';

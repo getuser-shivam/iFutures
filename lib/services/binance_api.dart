@@ -89,7 +89,7 @@ class BinanceApiService {
     final queryString = _buildQueryString(requestParams);
     final baseUrl = _baseUrlFor(scope);
     final headers = <String, String>{
-      'X-MBX-APIKEY': apiKey,
+      if (apiKey.trim().isNotEmpty) 'X-MBX-APIKEY': apiKey,
       'Content-Type': 'application/x-www-form-urlencoded',
     };
     final upperMethod = method.toUpperCase();
@@ -569,16 +569,45 @@ class BinanceApiService {
     required String symbol,
     String interval = '1m',
     int? limit,
+    int? startTime,
+    int? endTime,
   }) async {
+    if (limit != null && (limit < 1 || limit > 1500)) {
+      throw ArgumentError.value(limit, 'limit', 'Must be from 1 to 1500.');
+    }
     final params = <String, dynamic>{
       'symbol': symbol.toUpperCase(),
       'interval': interval,
     };
     if (limit != null) params['limit'] = limit;
+    if (startTime != null) params['startTime'] = startTime;
+    if (endTime != null) params['endTime'] = endTime;
 
     return _sendRequest<List<dynamic>>(
       'GET',
       '/fapi/v1/klines',
+      params: params,
+    );
+  }
+
+  Future<List<dynamic>> getFundingRateHistory({
+    required String symbol,
+    int? startTime,
+    int? endTime,
+    int limit = 1000,
+  }) async {
+    if (limit < 1 || limit > 1000) {
+      throw ArgumentError.value(limit, 'limit', 'Must be from 1 to 1000.');
+    }
+    final params = <String, dynamic>{
+      'symbol': symbol.toUpperCase(),
+      'limit': limit,
+    };
+    if (startTime != null) params['startTime'] = startTime;
+    if (endTime != null) params['endTime'] = endTime;
+    return _sendRequest<List<dynamic>>(
+      'GET',
+      '/fapi/v1/fundingRate',
       params: params,
     );
   }

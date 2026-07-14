@@ -129,7 +129,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
       stopLossPercent: stopLossPercent,
       quantity: quantity,
       rationale: rationale,
-      generatedAt: DateTime.now(),
+      generatedAt: context?.asOf ?? history.last.closeTime,
       confidence: confidence,
     );
   }
@@ -190,9 +190,12 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
 
     final profitableExit = _latestProfitableExit(context);
     if (profitableExit != null) {
+      final evaluationTime =
+          context?.asOf ??
+          (history.isEmpty ? DateTime.now() : history.last.closeTime);
       final waitRemaining =
           _truProfitCooldown -
-          DateTime.now().difference(profitableExit.timestamp);
+          evaluationTime.difference(profitableExit.timestamp);
       if (!waitRemaining.isNegative) {
         return StrategyTradePlan.hold(
           strategyName: name,
@@ -319,7 +322,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
         quantity: quantity,
         rationale:
             'TRU remains inside the 24h ceiling at ${_formatPrice(_truRangeCeiling)}. Price is trading in the upper half of the range near ${_formatPrice(shortLevel)}, so the engine stops waiting for perfect confirmation and leans short for a ${_formatPrice(_truProfitStep)} step back toward ${_formatPrice(targetPrice)}. After any profitable exit it still pauses for one minute before re-entering.',
-        generatedAt: DateTime.now(),
+        generatedAt: context?.asOf ?? history.last.closeTime,
         confidence: confidence,
         executionHint: orderBook?.executionHint,
       );
@@ -365,7 +368,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
         quantity: quantity,
         rationale:
             'TRU is trading in the lower half of the range near ${_formatPrice(longLevel)}. The engine now allows a rebound long toward ${_formatPrice(targetPrice)} without waiting for both momentum checks to flip positive first.',
-        generatedAt: DateTime.now(),
+        generatedAt: context?.asOf ?? history.last.closeTime,
         confidence: confidence,
         executionHint: orderBook?.executionHint,
       );
@@ -465,7 +468,7 @@ class RsiStrategy extends TradingStrategy implements TradePlanningStrategy {
       rationale: upperShort
           ? 'RSI is neutral, but price is pressing the upper edge of the recent range and momentum/order-book pressure is no longer supportive. The ALGO engine takes the short instead of waiting for a full RSI extreme.'
           : 'RSI is neutral, but price is leaning on the lower edge of the recent range and momentum/order-book pressure is stabilizing. The ALGO engine takes the long instead of waiting for a full RSI extreme.',
-      generatedAt: DateTime.now(),
+      generatedAt: context?.asOf ?? history.last.closeTime,
       confidence: confidence.toDouble(),
       executionHint: context?.orderBookSnapshot?.executionHint,
     );

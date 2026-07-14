@@ -74,6 +74,86 @@ void main() {
     });
   });
 
+  group('BinanceApiService historical futures data', () {
+    test('kline query forwards the closed-sample time window', () async {
+      http.Request? capturedRequest;
+      final service = BinanceApiService(
+        apiKey: '',
+        apiSecret: '',
+        isTestnet: false,
+        allowOrderMutations: false,
+        client: MockClient((request) async {
+          capturedRequest = request;
+          return http.Response('[]', 200, request: request);
+        }),
+      );
+
+      await service.getKlines(
+        symbol: 'ariausdt',
+        interval: '5m',
+        limit: 1500,
+        startTime: 1000,
+        endTime: 2000,
+      );
+
+      final request = capturedRequest!;
+      expect(request.method, 'GET');
+      expect(request.url.host, 'fapi.binance.com');
+      expect(request.url.path, '/fapi/v1/klines');
+      expect(request.url.queryParameters, containsPair('symbol', 'ARIAUSDT'));
+      expect(request.url.queryParameters, containsPair('interval', '5m'));
+      expect(request.url.queryParameters, containsPair('limit', '1500'));
+      expect(request.url.queryParameters, containsPair('startTime', '1000'));
+      expect(request.url.queryParameters, containsPair('endTime', '2000'));
+    });
+
+    test('funding history uses the public production endpoint', () async {
+      http.Request? capturedRequest;
+      final service = BinanceApiService(
+        apiKey: '',
+        apiSecret: '',
+        isTestnet: false,
+        allowOrderMutations: false,
+        client: MockClient((request) async {
+          capturedRequest = request;
+          return http.Response('[]', 200, request: request);
+        }),
+      );
+
+      await service.getFundingRateHistory(
+        symbol: 'btcusdt',
+        startTime: 3000,
+        endTime: 4000,
+        limit: 1000,
+      );
+
+      final request = capturedRequest!;
+      expect(request.method, 'GET');
+      expect(request.url.path, '/fapi/v1/fundingRate');
+      expect(request.url.queryParameters, containsPair('symbol', 'BTCUSDT'));
+      expect(request.url.queryParameters, containsPair('startTime', '3000'));
+      expect(request.url.queryParameters, containsPair('endTime', '4000'));
+      expect(request.url.queryParameters, containsPair('limit', '1000'));
+      expect(request.headers, isNot(contains('X-MBX-APIKEY')));
+    });
+
+    test(
+      'historical endpoint limits are validated before network access',
+      () async {
+        final service = BinanceApiService(apiKey: '', apiSecret: '');
+
+        await expectLater(
+          service.getKlines(symbol: 'ARIAUSDT', limit: 1501),
+          throwsArgumentError,
+        );
+        await expectLater(
+          service.getFundingRateHistory(symbol: 'ARIAUSDT', limit: 1001),
+          throwsArgumentError,
+        );
+      },
+    );
+  });
+
   group('BinanceApiService order reconciliation', () {
     test(
       'placeOrder timeout reports an unknown outcome and sends once',

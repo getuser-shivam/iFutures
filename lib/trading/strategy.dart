@@ -189,6 +189,8 @@ class StrategyTradePlan {
 }
 
 class StrategyAnalysisContext {
+  /// Evaluation clock used by historical replay to avoid wall-clock leakage.
+  final DateTime? asOf;
   final Position? openPosition;
   final List<Trade> symbolTrades;
   final List<Trade> accountTrades;
@@ -204,6 +206,7 @@ class StrategyAnalysisContext {
   final List<AiTradeOutcomeSnapshot> recentTradeOutcomes;
 
   const StrategyAnalysisContext({
+    this.asOf,
     this.openPosition,
     this.symbolTrades = const <Trade>[],
     this.accountTrades = const <Trade>[],

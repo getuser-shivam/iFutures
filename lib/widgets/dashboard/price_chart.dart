@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
+import '../../models/connection_status.dart';
 import '../../models/kline.dart';
+import '../../models/live_order.dart';
 import '../../models/position.dart';
 import '../../models/trade.dart';
 import '../../providers/trading_provider.dart';
@@ -29,11 +31,24 @@ class _PriceChartState extends ConsumerState<PriceChart> {
   int? _hoveredIndex;
 
   @override
+  void didUpdateWidget(covariant PriceChart oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.symbol != widget.symbol) {
+      _hoveredIndex = null;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final klines = ref.watch(klineStreamProvider(widget.symbol));
     final decisionPlan = ref.watch(decisionPlanStreamProvider(widget.symbol));
     final openPosition = ref.watch(positionStreamProvider(widget.symbol));
     final tradesAsync = ref.watch(tradeStreamProvider(widget.symbol));
+    final connectionAsync = ref.watch(connectionStatusProvider(widget.symbol));
+    final openOrdersAsync = ref.watch(openOrderStreamProvider(widget.symbol));
+    final clientOrderOwnerId = ref
+        .watch(tradingClientOwnerIdProvider)
+        .valueOrNull;
 
     return klines.when(
       data: (data) {
@@ -64,7 +79,13 @@ class _PriceChartState extends ConsumerState<PriceChart> {
           );
         }).toList();
 
-        final levels = _buildLevels(plan, position);
+        final levels = [
+          ..._buildLevels(plan, position),
+          ..._buildExchangeProtectionLevels(
+            openOrdersAsync.valueOrNull ?? const <LiveOrder>[],
+            clientOrderOwnerId,
+          ),
+        ];
         final visibleLow = recentData.fold<double>(
           recentData.first.low,
           (value, candle) => math.min(value, candle.low),
@@ -78,23 +99,14 @@ class _PriceChartState extends ConsumerState<PriceChart> {
           (value, candle) => math.max(value, candle.volume),
         );
 
-        var minPrice = visibleLow;
-        var maxPrice = visibleHigh;
-        for (final level in levels) {
-          if (level.price < minPrice) {
-            minPrice = level.price;
-          }
-          if (level.price > maxPrice) {
-            maxPrice = level.price;
-          }
-        }
-
-        final range = (maxPrice - minPrice).abs();
+        // Keep distant planned/liquidation levels from flattening the actual
+        // candles. Off-screen levels remain visible in the status legend.
+        final range = (visibleHigh - visibleLow).abs();
         final verticalPadding = range <= 0
-            ? math.max(maxPrice.abs() * 0.025, 0.000001)
+            ? math.max(visibleHigh.abs() * 0.025, 0.000001)
             : range * 0.12;
-        final chartMinY = minPrice - verticalPadding;
-        final chartMaxY = maxPrice + verticalPadding;
+        final chartMinY = visibleLow - verticalPadding;
+        final chartMaxY = visibleHigh + verticalPadding;
         final volumeMax = highestVolume <= 0 ? 1.0 : highestVolume * 1.18;
         final intervalLabel = _intervalLabel(recentData);
         final priorClose = activeIndex > 0
@@ -109,6 +121,10 @@ class _PriceChartState extends ConsumerState<PriceChart> {
             ? 0.0
             : (visibleChange / recentData.first.open) * 100;
         final tradeMarkers = _buildTradeMarkers(recentData, recentTrades);
+        final connectionBadge = _buildConnectionBadge(
+          connectionAsync,
+          intervalLabel,
+        );
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -168,46 +184,43 @@ class _PriceChartState extends ConsumerState<PriceChart> {
               ],
             ),
             const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
+            LayoutBuilder(
+              builder: (context, toolbarConstraints) {
+                final statusLegend = Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    StatusPill(
+                      label: connectionBadge.label,
+                      color: connectionBadge.color,
+                    ),
+                    if (plan != null)
                       StatusPill(
-                        label: 'Realtime $intervalLabel',
-                        color: AppColors.glowCyan,
+                        label: plan.isActionable
+                            ? 'Plan: ${plan.actionLabel} | ${plan.orderTypeLabel}'
+                            : 'Plan: waiting for trigger',
+                        color: _planColor(plan),
                       ),
-                      if (plan != null)
-                        StatusPill(
-                          label: plan.isActionable
-                              ? 'AI ${plan.actionLabel} | ${plan.orderTypeLabel}'
-                              : 'AI waiting for trigger',
-                          color: _planColor(plan),
-                        ),
-                      if (position != null)
-                        StatusPill(
-                          label:
-                              'Live ${position.isLong ? 'LONG' : 'SHORT'} on chart',
-                          color: AppColors.glowAmber,
-                        ),
-                      if (tradeMarkers.isNotEmpty)
-                        StatusPill(
-                          label: '${tradeMarkers.length} trade markers',
-                          color: AppColors.textPrimary,
-                        ),
-                      for (final level in levels)
-                        StatusPill(
-                          label:
-                              '${level.shortLabel} ${_formatPrice(level.price)}',
-                          color: level.color,
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Wrap(
+                    if (position != null)
+                      StatusPill(
+                        label:
+                            'Live ${position.isLong ? 'LONG' : 'SHORT'} on chart',
+                        color: AppColors.glowAmber,
+                      ),
+                    if (tradeMarkers.isNotEmpty)
+                      StatusPill(
+                        label: '${tradeMarkers.length} trade markers',
+                        color: AppColors.textPrimary,
+                      ),
+                    for (final level in levels)
+                      StatusPill(
+                        label:
+                            '${level.shortLabel} ${_formatPrice(level.price)}${_isPriceVisible(level.price, chartMinY, chartMaxY) ? '' : ' · off chart'}',
+                        color: level.color,
+                      ),
+                  ],
+                );
+                final windowControls = Wrap(
                   spacing: 8,
                   runSpacing: 8,
                   children: [
@@ -223,13 +236,46 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                         },
                       ),
                   ],
-                ),
-              ],
+                );
+
+                if (toolbarConstraints.maxWidth < 720) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      statusLegend,
+                      const SizedBox(height: 10),
+                      windowControls,
+                    ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: statusLegend),
+                    const SizedBox(width: 12),
+                    windowControls,
+                  ],
+                );
+              },
             ),
             const SizedBox(height: 14),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
+                  const priceAxisReservedWidth = 76.0;
+                  final panePlotWidth = math.max(
+                    0.0,
+                    constraints.maxWidth - priceAxisReservedWidth,
+                  );
+                  final candleBodyWidth =
+                      (panePlotWidth / math.max(1, recentData.length) * 0.56)
+                          .clamp(2.0, 8.0)
+                          .toDouble();
+                  final volumeBarWidth =
+                      (panePlotWidth / math.max(1, recentData.length) * 0.5)
+                          .clamp(2.0, 7.0)
+                          .toDouble();
                   return Column(
                     children: [
                       SizedBox(
@@ -278,14 +324,29 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                 builder: (context, chartConstraints) {
                                   final pricePaneHeight =
                                       chartConstraints.maxHeight;
-                                  final priceAxisReservedWidth = 76.0;
                                   final plotWidth =
-                                      chartConstraints.maxWidth -
-                                      priceAxisReservedWidth;
-                                  final zones = _buildChartZones(
-                                    plan,
-                                    position,
-                                  );
+                                      (chartConstraints.maxWidth -
+                                              priceAxisReservedWidth)
+                                          .clamp(0.0, chartConstraints.maxWidth)
+                                          .toDouble();
+                                  final visibleLevels = levels
+                                      .where(
+                                        (level) => _isPriceVisible(
+                                          level.price,
+                                          chartMinY,
+                                          chartMaxY,
+                                        ),
+                                      )
+                                      .toList(growable: false);
+                                  final zones = _buildChartZones(plan, position)
+                                      .where(
+                                        (zone) => _zoneIntersectsRange(
+                                          zone,
+                                          chartMinY,
+                                          chartMaxY,
+                                        ),
+                                      )
+                                      .toList(growable: false);
                                   return Stack(
                                     children: [
                                       ClipRRect(
@@ -319,14 +380,14 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                                                         ? 0.30
                                                                         : 0.18,
                                                                   ),
-                                                          bodyWidth: 8,
+                                                          bodyWidth:
+                                                              candleBodyWidth,
                                                           bodyRadius: 2,
                                                         );
                                                       },
                                                 ),
-                                            minX: 0,
-                                            maxX: (recentData.length - 1)
-                                                .toDouble(),
+                                            minX: -0.6,
+                                            maxX: recentData.length - 0.4,
                                             minY: chartMinY,
                                             maxY: chartMaxY,
                                             clipData: const FlClipData.all(),
@@ -408,9 +469,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                                 }
                                                 if (!event
                                                     .isInterestedForInteractions) {
-                                                  setState(() {
-                                                    _hoveredIndex = null;
-                                                  });
+                                                  _setHoveredIndex(null);
                                                   return;
                                                 }
                                                 final touchedIndex = response
@@ -420,22 +479,13 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                                     touchedIndex < 0 ||
                                                     touchedIndex >=
                                                         recentData.length) {
+                                                  _setHoveredIndex(null);
                                                   return;
                                                 }
-                                                setState(() {
-                                                  _hoveredIndex = touchedIndex;
-                                                });
+                                                _setHoveredIndex(touchedIndex);
                                               },
                                             ),
                                           ),
-                                          transformationConfig:
-                                              const FlTransformationConfig(
-                                                scaleAxis:
-                                                    FlScaleAxis.horizontal,
-                                                minScale: 1,
-                                                maxScale: 6,
-                                                trackpadScrollCausesScale: true,
-                                              ),
                                         ),
                                       ),
                                       IgnorePointer(
@@ -558,124 +608,60 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                                   ),
                                                 ),
                                               ),
-                                            for (final level in levels)
+                                            for (final level in visibleLevels)
                                               Positioned(
                                                 left: 0,
-                                                right: 0,
-                                                top:
-                                                    _positionForPrice(
-                                                      level.price,
-                                                      minY: chartMinY,
-                                                      maxY: chartMaxY,
-                                                      height: pricePaneHeight,
-                                                    ).clamp(
-                                                      4.0,
-                                                      pricePaneHeight - 4.0,
-                                                    ),
-                                                child: Opacity(
-                                                  opacity: 0.9,
-                                                  child: Row(
-                                                    children: [
-                                                      Expanded(
-                                                        child: Container(
-                                                          height: 1.4,
-                                                          decoration: BoxDecoration(
-                                                            gradient: LinearGradient(
-                                                              colors: [
-                                                                level.color
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.0,
-                                                                    ),
-                                                                level.color
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.88,
-                                                                    ),
-                                                                level.color
-                                                                    .withValues(
-                                                                      alpha:
-                                                                          0.0,
-                                                                    ),
-                                                              ],
-                                                            ),
-                                                          ),
-                                                        ),
-                                                      ),
-                                                      const SizedBox(width: 8),
-                                                      Container(
-                                                        padding:
-                                                            const EdgeInsets.symmetric(
-                                                              horizontal: 8,
-                                                              vertical: 4,
-                                                            ),
-                                                        decoration: BoxDecoration(
-                                                          color: AppColors
-                                                              .surfaceAlt
-                                                              .withValues(
-                                                                alpha: 0.94,
-                                                              ),
-                                                          borderRadius:
-                                                              BorderRadius.circular(
-                                                                10,
-                                                              ),
-                                                          border: Border.all(
-                                                            color: level.color
-                                                                .withValues(
-                                                                  alpha: 0.55,
-                                                                ),
-                                                          ),
-                                                        ),
-                                                        child: Text(
-                                                          level.shortLabel,
-                                                          style: TextStyle(
-                                                            color: level.color,
-                                                            fontSize: 10,
-                                                            fontWeight:
-                                                                FontWeight.w800,
-                                                          ),
-                                                        ),
-                                                      ),
-                                                    ],
+                                                top: 0,
+                                                width: plotWidth,
+                                                height: pricePaneHeight,
+                                                child: _ChartLevelOverlay(
+                                                  level: level,
+                                                  y: _positionForPrice(
+                                                    level.price,
+                                                    minY: chartMinY,
+                                                    maxY: chartMaxY,
+                                                    height: pricePaneHeight,
                                                   ),
-                                                ),
-                                              ),
-                                            for (final marker in tradeMarkers)
-                                              Positioned(
-                                                left:
-                                                    (10 +
-                                                            ((plotWidth - 26) *
-                                                                marker
-                                                                    .xFraction))
-                                                        .clamp(
-                                                          0.0,
-                                                          chartConstraints
-                                                                  .maxWidth -
-                                                              20,
-                                                        )
-                                                        .toDouble(),
-                                                top:
-                                                    (_positionForPrice(
-                                                              marker.price,
-                                                              minY: chartMinY,
-                                                              maxY: chartMaxY,
-                                                              height:
-                                                                  pricePaneHeight,
-                                                            ) +
-                                                            marker
-                                                                .verticalOffset)
-                                                        .clamp(
-                                                          6.0,
-                                                          pricePaneHeight - 22,
-                                                        )
-                                                        .toDouble(),
-                                                child: _TradeMarkerChip(
-                                                  marker: marker,
+                                                  paneHeight: pricePaneHeight,
                                                 ),
                                               ),
                                           ],
                                         ),
                                       ),
+                                      for (final marker in tradeMarkers)
+                                        Positioned(
+                                          left:
+                                              (10 +
+                                                      ((plotWidth - 26) *
+                                                          marker.xFraction))
+                                                  .clamp(
+                                                    0.0,
+                                                    math.max(
+                                                      0.0,
+                                                      plotWidth - 20,
+                                                    ),
+                                                  )
+                                                  .toDouble(),
+                                          top:
+                                              (_positionForPrice(
+                                                        marker.price,
+                                                        minY: chartMinY,
+                                                        maxY: chartMaxY,
+                                                        height: pricePaneHeight,
+                                                      ) +
+                                                      marker.verticalOffset)
+                                                  .clamp(
+                                                    6.0,
+                                                    math.max(
+                                                      6.0,
+                                                      pricePaneHeight - 22,
+                                                    ),
+                                                  )
+                                                  .toDouble(),
+                                          child: _TradeMarkerChip(
+                                            marker: marker,
+                                          ),
+                                        ),
                                     ],
                                   );
                                 },
@@ -688,7 +674,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                 BarChartData(
                                   minY: 0,
                                   maxY: volumeMax,
-                                  alignment: BarChartAlignment.spaceBetween,
+                                  alignment: BarChartAlignment.spaceAround,
                                   groupsSpace: 2,
                                   barTouchData: const BarTouchData(
                                     enabled: false,
@@ -758,7 +744,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
                                           barRods: [
                                             BarChartRodData(
                                               toY: entry.value.volume,
-                                              width: 6,
+                                              width: volumeBarWidth,
                                               borderRadius:
                                                   const BorderRadius.only(
                                                     topLeft: Radius.circular(4),
@@ -810,8 +796,8 @@ class _PriceChartState extends ConsumerState<PriceChart> {
     if (plan != null && plan.targetEntryPrice != null) {
       levels.add(
         _ChartLevel(
-          label: 'AI Entry',
-          shortLabel: 'AI ENTRY',
+          label: 'Planned Entry',
+          shortLabel: 'PLAN ENTRY',
           price: plan.targetEntryPrice!,
           color: _planColor(plan),
         ),
@@ -820,8 +806,8 @@ class _PriceChartState extends ConsumerState<PriceChart> {
     if (plan?.takeProfitPrice != null) {
       levels.add(
         _ChartLevel(
-          label: 'AI Take Profit',
-          shortLabel: 'AI TP',
+          label: 'Planned Take Profit',
+          shortLabel: 'PLAN TP',
           price: plan!.takeProfitPrice!,
           color: AppColors.positive,
         ),
@@ -830,8 +816,8 @@ class _PriceChartState extends ConsumerState<PriceChart> {
     if (plan?.stopLossPrice != null) {
       levels.add(
         _ChartLevel(
-          label: 'AI Stop Loss',
-          shortLabel: 'AI SL',
+          label: 'Planned Stop Loss',
+          shortLabel: 'PLAN SL',
           price: plan!.stopLossPrice!,
           color: AppColors.negative,
         ),
@@ -861,6 +847,49 @@ class _PriceChartState extends ConsumerState<PriceChart> {
     return levels;
   }
 
+  List<_ChartLevel> _buildExchangeProtectionLevels(
+    List<LiveOrder> orders,
+    String? ownerId,
+  ) {
+    if (ownerId == null || ownerId.isEmpty) {
+      return const <_ChartLevel>[];
+    }
+
+    return orders
+        .where((order) => order.isProtectionOrder && order.isOwnedBy(ownerId))
+        .map((order) {
+          final price = order.triggerPrice;
+          if (price == null || !price.isFinite || price <= 0) {
+            return null;
+          }
+          final normalizedType = order.type.toUpperCase();
+          if (normalizedType == 'STOP_MARKET') {
+            return _ChartLevel(
+              label: 'Exchange-confirmed Stop Loss',
+              shortLabel: 'EXCH SL',
+              price: price,
+              color: AppColors.negative,
+            );
+          }
+          if (normalizedType == 'TAKE_PROFIT_MARKET') {
+            return _ChartLevel(
+              label: 'Exchange-confirmed Take Profit',
+              shortLabel: 'EXCH TP',
+              price: price,
+              color: AppColors.positive,
+            );
+          }
+          return _ChartLevel(
+            label: 'Exchange-confirmed Protection',
+            shortLabel: 'EXCH EXIT',
+            price: price,
+            color: AppColors.glowAmber,
+          );
+        })
+        .whereType<_ChartLevel>()
+        .toList(growable: false);
+  }
+
   List<_ChartZone> _buildChartZones(
     StrategyTradePlan? plan,
     Position? position,
@@ -875,7 +904,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
       if (plan.signal == TradingSignal.buy) {
         zones.add(
           _ChartZone(
-            label: 'AI Target Zone',
+            label: 'Planned Target Zone',
             topPrice: plan.takeProfitPrice!,
             bottomPrice: plan.targetEntryPrice!,
             color: AppColors.positive,
@@ -883,7 +912,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
         );
         zones.add(
           _ChartZone(
-            label: 'AI Risk Zone',
+            label: 'Planned Risk Zone',
             topPrice: plan.targetEntryPrice!,
             bottomPrice: plan.stopLossPrice!,
             color: AppColors.negative,
@@ -892,7 +921,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
       } else if (plan.signal == TradingSignal.sell) {
         zones.add(
           _ChartZone(
-            label: 'AI Risk Zone',
+            label: 'Planned Risk Zone',
             topPrice: plan.stopLossPrice!,
             bottomPrice: plan.targetEntryPrice!,
             color: AppColors.negative,
@@ -900,7 +929,7 @@ class _PriceChartState extends ConsumerState<PriceChart> {
         );
         zones.add(
           _ChartZone(
-            label: 'AI Target Zone',
+            label: 'Planned Target Zone',
             topPrice: plan.targetEntryPrice!,
             bottomPrice: plan.takeProfitPrice!,
             color: AppColors.positive,
@@ -993,6 +1022,70 @@ class _PriceChartState extends ConsumerState<PriceChart> {
     }
 
     return bestIndex;
+  }
+
+  void _setHoveredIndex(int? index) {
+    if (!mounted || _hoveredIndex == index) {
+      return;
+    }
+    setState(() {
+      _hoveredIndex = index;
+    });
+  }
+
+  _ChartConnectionBadge _buildConnectionBadge(
+    AsyncValue<ConnectionStatus> status,
+    String intervalLabel,
+  ) {
+    return status.when(
+      data: (connection) {
+        return switch (connection.state) {
+          MarketConnectionState.connected => _ChartConnectionBadge(
+            label:
+                'Market live · $intervalLabel${connection.latencyMs == null ? '' : ' · ${connection.latencyMs}ms'}',
+            color: AppColors.glowCyan,
+          ),
+          MarketConnectionState.connecting => const _ChartConnectionBadge(
+            label: 'Market connecting',
+            color: AppColors.glowAmber,
+          ),
+          MarketConnectionState.stale => _ChartConnectionBadge(
+            label: 'Market stale · $intervalLabel',
+            color: AppColors.warning,
+          ),
+          MarketConnectionState.reconnecting => _ChartConnectionBadge(
+            label:
+                'Market reconnecting${connection.retryAttempt == null ? '' : ' · attempt ${connection.retryAttempt}'}',
+            color: AppColors.warning,
+          ),
+          MarketConnectionState.disconnected => const _ChartConnectionBadge(
+            label: 'Market disconnected',
+            color: AppColors.negative,
+          ),
+        };
+      },
+      loading: () => const _ChartConnectionBadge(
+        label: 'Market connecting',
+        color: AppColors.glowAmber,
+      ),
+      error: (_, _) => const _ChartConnectionBadge(
+        label: 'Market status unavailable',
+        color: AppColors.negative,
+      ),
+    );
+  }
+
+  bool _isPriceVisible(double price, double minY, double maxY) {
+    return price.isFinite && price >= minY && price <= maxY;
+  }
+
+  bool _zoneIntersectsRange(_ChartZone zone, double minY, double maxY) {
+    final zoneMin = math.min(zone.topPrice, zone.bottomPrice);
+    final zoneMax = math.max(zone.topPrice, zone.bottomPrice);
+    return zoneMin.isFinite &&
+        zoneMax.isFinite &&
+        zoneMax >= minY &&
+        zoneMin <= maxY;
   }
 
   double _positionForPrice(
@@ -1144,6 +1237,87 @@ class _ChartLevel {
     required this.price,
     required this.color,
   });
+}
+
+class _ChartConnectionBadge {
+  final String label;
+  final Color color;
+
+  const _ChartConnectionBadge({required this.label, required this.color});
+}
+
+class _ChartLevelOverlay extends StatelessWidget {
+  final _ChartLevel level;
+  final double y;
+  final double paneHeight;
+
+  const _ChartLevelOverlay({
+    required this.level,
+    required this.y,
+    required this.paneHeight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const lineHeight = 1.4;
+    const chipHeight = 24.0;
+    final lineTop = (y - (lineHeight / 2))
+        .clamp(0.0, math.max(0.0, paneHeight - lineHeight))
+        .toDouble();
+    final chipTop = (y - (chipHeight / 2))
+        .clamp(0.0, math.max(0.0, paneHeight - chipHeight))
+        .toDouble();
+
+    return Opacity(
+      opacity: 0.9,
+      child: Stack(
+        children: [
+          Positioned(
+            left: 0,
+            right: 0,
+            top: lineTop,
+            child: Container(
+              height: lineHeight,
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    level.color.withValues(alpha: 0.0),
+                    level.color.withValues(alpha: 0.88),
+                    level.color.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 6,
+            top: chipTop,
+            child: Semantics(
+              label: '${level.label} at ${level.price}',
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceAlt.withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: level.color.withValues(alpha: 0.55),
+                  ),
+                ),
+                child: Text(
+                  level.shortLabel,
+                  style: TextStyle(
+                    color: level.color,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ChartZone {

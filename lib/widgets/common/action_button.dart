@@ -28,14 +28,17 @@ class ActionButton extends StatelessWidget {
           child: Ink(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                colors: [color.withOpacity(0.95), color.withOpacity(0.7)],
+                colors: [
+                  color.withValues(alpha: 0.95),
+                  color.withValues(alpha: 0.7),
+                ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               borderRadius: BorderRadius.circular(14),
               boxShadow: [
                 BoxShadow(
-                  color: color.withOpacity(0.35),
+                  color: color.withValues(alpha: 0.35),
                   blurRadius: 16,
                   offset: const Offset(0, 8),
                 ),
@@ -48,12 +51,18 @@ class ActionButton extends StatelessWidget {
                 children: [
                   Icon(icon, color: Colors.white, size: 18),
                   const SizedBox(width: 8),
-                  Text(
-                    label,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.6,
+                  Flexible(
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Text(
+                        label,
+                        maxLines: 1,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                        ),
+                      ),
                     ),
                   ),
                 ],

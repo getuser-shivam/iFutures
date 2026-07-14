@@ -1230,15 +1230,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             child: ManualOrderTicket(symbol: symbol),
           ),
           const SizedBox(height: 16),
-          if (currentMode == StrategyMode.algo) ...[
-            _WorkspaceBlock(
-              title: 'Algorithm Lab',
-              subtitle:
-                  'Run backtests here so RSI experiments and tuning stay grouped away from the live dashboard.',
-              child: BacktestCard(symbol: symbol),
-            ),
-            const SizedBox(height: 16),
-          ],
+          _WorkspaceBlock(
+            title: 'Multi-Coin Mock Lab',
+            subtitle:
+                'Run deterministic historical ALGO tests across the core markets from any strategy workspace. Results include configured execution costs and are evidence from a past sample, not a prediction of live profit.',
+            child: BacktestCard(symbol: symbol),
+          ),
+          const SizedBox(height: 16),
           _SettingsSection(
             title: 'Binance API Configuration',
             subtitle:

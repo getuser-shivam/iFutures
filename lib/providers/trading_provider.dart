@@ -6,6 +6,7 @@ import '../services/binance_api.dart';
 import '../services/binance_ws.dart';
 import '../services/backtest_service.dart';
 import '../services/market_analysis_service.dart';
+import '../services/mock_portfolio_test_service.dart';
 import '../services/settings_service.dart';
 import '../services/price_alert_service.dart';
 import '../services/trade_csv_export_service.dart';
@@ -48,6 +49,23 @@ final tradeCsvExportServiceProvider = Provider<TradeCsvExportService>((ref) {
 
 final backtestServiceProvider = Provider<BacktestService>((ref) {
   return const BacktestService();
+});
+
+final mockPortfolioTestServiceProvider = Provider<MockPortfolioTestService>((
+  ref,
+) {
+  return const MockPortfolioTestService();
+});
+
+/// Public production market data only. Historical replay must not inherit the
+/// saved Demo/Live order route or require private credentials.
+final historicalBinanceApiProvider = Provider<BinanceApiService>((ref) {
+  return BinanceApiService(
+    apiKey: '',
+    apiSecret: '',
+    isTestnet: false,
+    allowOrderMutations: false,
+  );
 });
 
 final marketAnalysisServiceProvider = Provider<MarketAnalysisService>((ref) {

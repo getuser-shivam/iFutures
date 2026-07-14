@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.1.1] - 2026-07-14
+### Added
+- Multi-Coin Mock Lab for deterministic historical ALGO evaluation across the core `ARIAUSDT`, `TRIAUSDT`, `SIRENUSDT`, and `BTCUSDT` markets.
+- Portfolio-level and per-symbol mock results with starting balance, net return, drawdown, trade count, fees, funding, slippage, and an equity curve.
+- Configurable historical-test assumptions for sample size, interval, fee per side, slippage, fallback funding, and starting balance.
+
+### Changed
+- Made the Multi-Coin Mock Lab available from Settings in AI, ALGO, and Manual workspaces instead of limiting it to ALGO mode.
+- Reworked historical execution modeling to generate a signal from a completed candle, attempt entry on a later candle, apply intrabar stop/take-profit checks, and include configured execution costs. Historical funding is used when available, with the visible fallback assumption used otherwise.
+
+### Fixed
+- Removed same-candle signal-and-fill lookahead from the new multi-market mock workflow and resolved adverse same-bar stop/take-profit ambiguity with stop-first handling.
+- Made limit-fill candles conservative: a touched stop is assumed after the fill, while an ambiguous same-candle take profit is not credited.
+- Repaired responsive candlestick layout, exact risk-level positioning, candle/volume alignment, edge clipping, stale connection labels, and distant plan/liquidation levels that previously compressed the visible candles.
+- Distinguished strategy `PLAN` levels from owner-scoped, exchange-confirmed `EXCH` stop and take-profit orders on the chart.
+
+### Important
+- Mock results describe one historical sample and do not guarantee future or live profit. They cannot fully reproduce live liquidity, partial fills, liquidation, exchange filters/outages, latency, order-book movement, or market impact; validate independently in Binance Demo before risking funds.
+
 ## [1.1.0] - 2026-07-14
 ### Added
 - ARIAUSDT-first one-click Futures desk with required ARIAUSDT, TRIAUSDT, SIRENUSDT, and BTCUSDT markets while retaining TRUUSDT.

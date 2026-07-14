@@ -37,6 +37,7 @@ void main() {
     expect(plan.stopLossPercent, greaterThan(0));
     expect(plan.rationale, contains('24h ceiling'));
     expect(plan.rationale, contains('one minute'));
+    expect(plan.generatedAt, history.last.closeTime);
   });
 
   test('TRU range algo waits one minute after a profitable exit', () async {
@@ -49,19 +50,21 @@ void main() {
       0.01112,
       0.01108,
     ]);
+    final asOf = history.last.closeTime;
 
     final plan = await strategy.buildTradePlan(
       history,
       symbol: 'TRUUSDT',
       riskSettings: riskSettings,
       context: StrategyAnalysisContext(
+        asOf: asOf,
         symbolTrades: <Trade>[
           Trade(
             symbol: 'TRUUSDT',
             side: 'BUY',
             price: 0.0104,
             quantity: 100,
-            timestamp: DateTime.now().subtract(const Duration(seconds: 25)),
+            timestamp: asOf.subtract(const Duration(seconds: 25)),
             strategy: 'ALGO Engine',
             kind: 'EXIT',
             realizedPnl: 0.1,

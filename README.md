@@ -4,7 +4,7 @@ A Flutter-based trading desk for automated cryptocurrency trading with AI, algor
 
 ## Versioning
 
-- **Current version:** `1.1.0+10` (see `pubspec.yaml`)
+- **Current version:** `1.1.1+11` (see `pubspec.yaml`)
 - **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **TODOs:** [TODO.md](TODO.md)
 
@@ -20,7 +20,7 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 
 ### Current Features
 
-- **Real-time Candlestick Charts**: OHLC candlestick chart with live updates.
+- **Real-time Candlestick Charts**: Responsive OHLC/volume chart with truthful connection status, synchronized bar windows, candle-only scaling, and separate planned versus exchange-confirmed protection levels.
 - **ARIA-First Futures Desk**: `ARIAUSDT`, `TRIAUSDT`, `SIRENUSDT`, `BTCUSDT`, and the existing `TRUUSDT` market are always included, with live exchange-filter validation for price ticks, quantity steps, minimum notional, and contract status.
 - **Guarded One-Click Long / Short**: A 30-second arming window, explicit Demo/Real-Money labels, Smart Maker post-only entry, optional market entry, and a gross `$5 TP / $5 SL` preset with a safer minimum margin budget.
 - **Current Binance Conditional Orders**: Stop loss and take profit use the USD-M Futures Algo Order API and are reconciled separately from normal working orders.
@@ -53,10 +53,18 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 - **Open Position Card**: Current position with SL/TP previews and unrealized PnL.
 - **Daily Performance Summary**: Exit-fee-adjusted PnL, win rate, and absolute USDT peak-to-trough PnL drawdown for the current local day.
 - **CSV Export**: Desktop trade history can be exported for offline analysis; browser builds disable filesystem export.
-- **Backtesting Lab**: Historical close-price simulation using the selected strategy and configured risk rules, explicitly labeled as gross and excluding maker-fill probability, fees, funding, slippage, and intrabar triggers.
+- **Multi-Coin Mock Lab**: Deterministic historical ALGO tests for `ARIAUSDT`, `TRIAUSDT`, `SIRENUSDT`, `BTCUSDT`, and optional configured markets, with portfolio and per-symbol results. A completed candle creates the signal, a later candle attempts the fill, intrabar stop/take-profit conflicts resolve stop-first, and configured fees, slippage, and funding are included.
 - **Performance Metrics**: Recorded-exit-fee-adjusted win rate, total PnL, absolute USDT PnL drawdown, and profit factor. A percentage is not claimed without known starting equity.
 - **Status Indicators**: Bot running state, engine status, reconnect attempts, and strategy, Binance, and AI health display.
 - **Price Alerts**: Threshold-based one-shot alerts with toast notifications and rearm controls.
+
+## Multi-Coin Mock Test Assumptions
+
+The Settings screen exposes the Multi-Coin Mock Lab in AI, ALGO, and Manual workspaces. Its core selection is `ARIAUSDT`, `TRIAUSDT`, `SIRENUSDT`, and `BTCUSDT`; configured markets can be included as additional independent test legs. The lab uses public production-market candle history for price evidence but never submits an order.
+
+Each run uses a fresh deterministic RSI ALGO instance per symbol and divides the starting balance equally across the selected markets. It excludes an unfinished current candle, creates decisions only from information available at a completed candle, and attempts fills on later candles. Market entries receive the configured adverse slippage; limit-style entries must be touched within their lifetime; fees are charged per side; and historical funding is applied when it is available, otherwise the displayed fallback funding assumption is used. Stop loss and take profit use candle high/low data, with stop-first handling when both could have triggered in the same candle.
+
+These results are a historical scenario, not proof that a preset is profitable and not a guarantee of future or live profit. Candle data cannot reproduce order-book priority, partial fills, latency, market impact, changing exchange filters, liquidation mechanics, outages, or every funding edge case. Treat a positive result as a reason for more out-of-sample and Binance Demo validation, never as authorization to risk money.
 
 ## Screenshots
 
@@ -68,7 +76,7 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 ### App Gallery
 
 ![iFutures App Gallery - Release Timeline](screenshot_app_gallery.png)
-*Latest available gallery capture is from `1.0.8`; the `1.1.0` release adds the guarded ARIA-first execution desk described above.*
+*Latest available gallery capture is from `1.0.8`; releases through `1.1.1` add the guarded ARIA-first execution desk and multi-coin mock lab described above.*
 
 ## Development Status
 
@@ -83,6 +91,7 @@ iFutures is a multi-platform trading application that connects to Binance, provi
 - [x] Paper trading with entry/exit and realized PnL
 - [x] Trade history and performance metrics
 - [x] Historical backtesting engine
+- [x] Multi-coin historical mock lab with execution-cost assumptions, equity curve, and per-symbol results
 - [x] Multi-symbol selection
 - [x] Configurable symbol list in Settings
 - [x] RSI strategy presets and tuning controls in Settings
@@ -191,6 +200,7 @@ lib/
 |  |- connection_status.dart         # Market connection state model
 |  |- kline.dart                     # OHLCV candlestick data model
 |  |- market_analysis.dart           # Market analysis data models and formatting helpers
+|  |- mock_test_result.dart          # Multi-coin historical mock result models
 |  |- order_book_snapshot.dart       # Binance order-book execution summary
 |  |- portfolio_analytics_snapshot.dart # Portfolio analytics view model
 |  |- portfolio_symbol_breakdown.dart # Per-symbol portfolio contribution model
@@ -214,6 +224,7 @@ lib/
 |  |- binance_api.dart               # Binance REST API client
 |  |- binance_ws.dart                # Binance WebSocket connection
 |  |- market_analysis_service.dart   # Live BTC/ETH/BNB/SOL analysis and crypto news feed
+|  |- mock_portfolio_test_service.dart # Deterministic cost-aware multi-coin mock engine
 |  |- order_book_analyzer.dart       # Spread, slippage, and imbalance analysis for execution planning
 |  |- portfolio_analytics_calculator.dart # Account-level analytics and contribution snapshot builder
 |  |- performance_summary_calculator.dart # Shared performance summary logic
@@ -236,6 +247,7 @@ lib/
 |  |  |- app_toast.dart              # Shared floating snackbar helper
 |  |  |- status_pill.dart            # Compact status badge
 |  |- dashboard/
+|  |  |- backtest_card.dart          # Multi-Coin Mock Lab controls and results
 |  |  |- daily_performance_card.dart # Daily realized PnL summary
 |  |  |- market_analysis_card.dart   # Live BTC/ETH/BNB/SOL analysis and crypto news
 |  |  |- open_position_card.dart     # Open position summary
