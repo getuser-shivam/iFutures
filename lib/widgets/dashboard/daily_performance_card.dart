@@ -56,7 +56,7 @@ class DailyPerformanceCard extends ConsumerWidget {
               ),
               const SizedBox(height: 8),
               Text(
-                'Closed trades since local midnight - $dayLabel',
+                'Closed trades after recorded exit commissions since local midnight - $dayLabel',
                 style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 12,
@@ -99,7 +99,7 @@ class DailyPerformanceCard extends ConsumerWidget {
                           color: summary.totalPnL >= 0
                               ? AppColors.positive
                               : AppColors.negative,
-                          helper: 'Realized today',
+                          helper: 'After recorded exit fees',
                         ),
                         _SummaryTile(
                           title: 'Win Rate',
@@ -112,11 +112,12 @@ class DailyPerformanceCard extends ConsumerWidget {
                               '${summary.winningTrades}/${summary.totalTrades} wins',
                         ),
                         _SummaryTile(
-                          title: 'Drawdown',
-                          value: '${summary.maxDrawdown.toStringAsFixed(0)}%',
+                          title: 'PnL Drawdown',
+                          value:
+                              '${summary.maxDrawdown.toStringAsFixed(2)} USDT',
                           icon: Icons.waterfall_chart,
                           color: AppColors.warning,
-                          helper: 'Peak to trough',
+                          helper: 'Peak to trough after exit fees',
                         ),
                       ],
                     );

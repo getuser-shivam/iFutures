@@ -64,11 +64,12 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            'Runs the selected strategy over the latest 500 candles and reuses the same risk rules as live trading.',
-            style: const TextStyle(
+          const Text(
+            'Gross close-price simulation over the latest 500 candles. It applies configured percentage or absolute TP/SL only at candle closes; it does not model intrabar triggers, maker fill probability, fees, funding, or slippage. Results are not expected live profit.',
+            style: TextStyle(
               color: AppColors.textSecondary,
               fontSize: 12,
+              height: 1.4,
             ),
           ),
           const SizedBox(height: 10),
@@ -79,6 +80,10 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
               StatusPill(
                 label: 'Symbol: ${widget.symbol}',
                 color: AppColors.glowAmber,
+              ),
+              const StatusPill(
+                label: 'GROSS / CLOSE-PRICE ESTIMATE',
+                color: AppColors.warning,
               ),
               StatusPill(
                 label: strategy == null
@@ -132,7 +137,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
               padding: EdgeInsets.symmetric(vertical: 20),
               child: Center(
                 child: Text(
-                  'Run a backtest to compare the strategy against historical candles.\nManual mode will stay flat by design.',
+                  'Run a gross close-price simulation against historical candles.\nManual mode will stay flat by design.',
                   style: TextStyle(color: AppColors.textSecondary),
                   textAlign: TextAlign.center,
                 ),
@@ -158,7 +163,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
                       physics: const NeverScrollableScrollPhysics(),
                       children: [
                         _MetricTile(
-                          title: 'Net P&L',
+                          title: 'Gross P&L estimate',
                           value: _formatMoney(_result!.netPnL),
                           icon: _result!.netPnL >= 0
                               ? Icons.trending_up
@@ -167,7 +172,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
                               ? AppColors.positive
                               : AppColors.negative,
                           helper:
-                              'Balance: ${_formatMoney(_result!.endingBalance)}',
+                              'Close-price balance: ${_formatMoney(_result!.endingBalance)}',
                         ),
                         _MetricTile(
                           title: 'Win Rate',
@@ -178,7 +183,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
                               ? AppColors.positive
                               : AppColors.warning,
                           helper:
-                              '${_result!.summary.winningTrades}/${_result!.summary.totalTrades} exits',
+                              '${_result!.summary.winningTrades}/${_result!.summary.totalTrades} gross exits',
                         ),
                         _MetricTile(
                           title: 'Profit Factor',
@@ -189,15 +194,16 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
                           color: _result!.summary.profitFactor >= 1.5
                               ? AppColors.positive
                               : AppColors.warning,
-                          helper: 'Gross profit / loss',
+                          helper: 'Gross simulated profit / loss',
                         ),
                         _MetricTile(
-                          title: 'Max Drawdown',
+                          title: 'Gross PnL Drawdown',
                           value:
-                              '${_result!.summary.maxDrawdown.toStringAsFixed(0)}%',
+                              '${_result!.summary.maxDrawdown.toStringAsFixed(2)} USDT',
                           icon: Icons.waterfall_chart,
                           color: AppColors.warning,
-                          helper: '${_result!.candlesProcessed} candles',
+                          helper:
+                              'Close-price path | ${_result!.candlesProcessed} candles',
                         ),
                       ],
                     );
@@ -224,7 +230,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
                 ),
                 const SizedBox(height: 14),
                 const Text(
-                  'Recent exits',
+                  'Recent gross simulated exits',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
@@ -302,7 +308,7 @@ class _BacktestCardState extends ConsumerState<BacktestCard> {
 
       showAppToast(
         context,
-        'Backtest complete',
+        'Gross backtest estimate complete',
         backgroundColor: AppColors.glowCyan.withOpacity(0.95),
         foregroundColor: Colors.white,
         icon: Icons.query_stats_outlined,

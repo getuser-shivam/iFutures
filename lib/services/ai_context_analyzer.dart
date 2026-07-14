@@ -193,9 +193,12 @@ class AiContextAnalyzer {
     if (summary.totalPnL > 0 && summary.winRate >= 60) {
       return 'Hot';
     }
+    final unusuallyDeepDrawdown =
+        summary.bestTrade > 0 &&
+        summary.maxDrawdown >= summary.bestTrade.abs() * 2;
     if (summary.totalPnL < 0 ||
         summary.winRate <= 35 ||
-        summary.maxDrawdown >= 15) {
+        unusuallyDeepDrawdown) {
       return 'Cold';
     }
     return 'Mixed';

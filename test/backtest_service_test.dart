@@ -93,4 +93,48 @@ void main() {
       'stop_loss',
     );
   });
+
+  test(
+    'absolute max-loss overrides percentage stop in close-price simulation',
+    () async {
+      final service = BacktestService();
+      final result = await service.run(
+        symbol: 'ARIAUSDT',
+        strategy: _StopLossStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 50,
+          takeProfitPercent: 0,
+          tradeQuantity: 1,
+          maxLossUsdt: 5,
+        ),
+        klines: [_kline(0, 100), _kline(1, 94)],
+      );
+
+      final exit = result.trades.where((trade) => trade.kind == 'EXIT').single;
+      expect(exit.reason, 'stop_loss');
+      expect(exit.realizedPnl, -6);
+    },
+  );
+
+  test(
+    'absolute profit target overrides percentage target in close-price simulation',
+    () async {
+      final service = BacktestService();
+      final result = await service.run(
+        symbol: 'ARIAUSDT',
+        strategy: _StopLossStrategy(),
+        riskSettings: const RiskSettings(
+          stopLossPercent: 0,
+          takeProfitPercent: 50,
+          tradeQuantity: 1,
+          targetProfitUsdt: 5,
+        ),
+        klines: [_kline(0, 100), _kline(1, 106)],
+      );
+
+      final exit = result.trades.where((trade) => trade.kind == 'EXIT').single;
+      expect(exit.reason, 'take_profit');
+      expect(exit.realizedPnl, 6);
+    },
+  );
 }

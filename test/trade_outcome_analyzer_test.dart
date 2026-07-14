@@ -69,4 +69,26 @@ void main() {
     );
     expect(outcomes.first.summaryLine, contains('Profitable exit'));
   });
+
+  test('treats a gross win below commission as a losing outcome', () {
+    final outcomes = TradeOutcomeAnalyzer.analyze([
+      Trade(
+        symbol: 'ARIAUSDT',
+        side: 'SELL',
+        price: 0.10,
+        quantity: 1,
+        timestamp: DateTime(2026, 4, 2, 12, 20),
+        fee: 0.05,
+        strategy: 'AI Analyst',
+        kind: 'EXIT',
+        realizedPnl: 0.04,
+        reason: 'take_profit',
+      ),
+    ]);
+
+    expect(outcomes, hasLength(1));
+    expect(outcomes.single.realizedPnl, closeTo(-0.01, 1e-12));
+    expect(outcomes.single.isLoss, isTrue);
+    expect(outcomes.single.outcomeLabel, 'Losing exit');
+  });
 }

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 
 import '../models/trade.dart';
@@ -14,6 +15,11 @@ class TradeCsvExportService {
     required String symbol,
     required List<Trade> trades,
   }) async {
+    if (kIsWeb) {
+      throw UnsupportedError(
+        'CSV file export is available in the desktop app.',
+      );
+    }
     final exportDirectory = await _resolveExportDirectory();
     final timestamp = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
     final safeSymbol = _sanitizeFileComponent(symbol);

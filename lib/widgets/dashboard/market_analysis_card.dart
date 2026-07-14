@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 
-import '../../constants/symbols.dart';
 import '../../models/market_analysis.dart';
 import '../../providers/trading_provider.dart';
 import '../../theme/app_theme.dart';

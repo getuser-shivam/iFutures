@@ -4,6 +4,7 @@ import 'package:dio/dio.dart';
 import '../models/ai_context_snapshot.dart';
 import '../models/ai_service_status.dart';
 import '../models/ai_trade_outcome_snapshot.dart';
+import '../models/ai_trade_direction_mode.dart';
 import '../models/ai_timeframe_snapshot.dart';
 import '../models/kline.dart';
 import '../models/ai_provider.dart';
@@ -27,7 +28,9 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
   final double? shortBiasPrice;
   final ManualOrderType longOrderType;
   final ManualOrderType shortOrderType;
+  final AiTradeDirectionMode tradeDirectionMode;
   final int leverage;
+  final double? maxInvestmentUsdt;
   final double takeProfitPercent;
   final double stopLossPercent;
   final Dio _dio;
@@ -42,7 +45,9 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     this.shortBiasPrice,
     this.longOrderType = ManualOrderType.limit,
     this.shortOrderType = ManualOrderType.limit,
+    this.tradeDirectionMode = AiTradeDirectionMode.auto,
     this.leverage = 1,
+    this.maxInvestmentUsdt,
     this.takeProfitPercent = 0,
     this.stopLossPercent = 0,
     Dio? dio,
@@ -164,11 +169,20 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     StrategyAnalysisContext? context,
   }) async {
     final currentPrice = history.isEmpty ? 0.0 : history.last.close;
-    final resolvedLeverage = riskSettings?.leverage ?? leverage;
+    final configuredLeverage = leverage > 0 ? leverage : null;
+    final resolvedLeverage = (configuredLeverage ?? riskSettings?.leverage ?? 1)
+        .clamp(1, 125);
     final resolvedTakeProfit =
         riskSettings?.takeProfitPercent ?? takeProfitPercent;
     final resolvedStopLoss = riskSettings?.stopLossPercent ?? stopLossPercent;
-    final configuredQuantity = riskSettings?.tradeQuantity;
+    final fallbackQuantity =
+        riskSettings?.resolveQuantity(currentPrice) ??
+        riskSettings?.tradeQuantity;
+    final promptQuantity = _resolveConfiguredQuantity(
+      currentPrice: currentPrice,
+      leverage: resolvedLeverage,
+      fallbackQuantity: fallbackQuantity,
+    );
 
     if (history.isEmpty) {
       return StrategyTradePlan.hold(
@@ -202,7 +216,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       leverage: resolvedLeverage,
       takeProfitPercent: resolvedTakeProfit,
       stopLossPercent: resolvedStopLoss,
-      quantity: configuredQuantity,
+      quantity: promptQuantity,
       contextSnapshot: contextSnapshot,
       multiTimeframeSnapshot: multiTimeframeSnapshot,
       orderBookSnapshot: orderBookSnapshot,
@@ -231,7 +245,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       };
 
       final payload = _extractJsonMap(raw);
-      final signal = _decisionToSignal(
+      final rawSignal = _decisionToSignal(
         (payload['decision'] ??
                 payload['signal'] ??
                 payload['action'] ??
@@ -239,24 +253,38 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
             ?.toString()
             .toLowerCase(),
       );
+      final signal = _applyTradeDirectionMode(rawSignal);
       final orderType = signal == TradingSignal.hold
           ? null
           : (_parseOrderType(payload['orderType']?.toString()) ??
                 _fallbackOrderType(history, signal, orderBookSnapshot));
-      final targetEntryPrice =
-          _asDouble(
-            payload['targetEntryPrice'] ??
-                payload['entryPrice'] ??
-                payload['price'],
-          ) ??
-          suggestTargetEntryPrice(currentPrice, signal, orderType);
-      final planLeverage =
-          _asInt(payload['leverage'])?.clamp(1, 125) ?? resolvedLeverage;
-      final planTakeProfit =
-          _asDouble(payload['takeProfitPercent']) ?? resolvedTakeProfit;
-      final planStopLoss =
-          _asDouble(payload['stopLossPercent']) ?? resolvedStopLoss;
-      final confidence = _asDouble(payload['confidence']);
+      final targetEntryPrice = _validatedEntryPrice(
+        _asDouble(
+          payload['targetEntryPrice'] ??
+              payload['entryPrice'] ??
+              payload['price'],
+        ),
+        currentPrice: currentPrice,
+        fallback: suggestTargetEntryPrice(currentPrice, signal, orderType),
+      );
+      final planLeverage = configuredLeverage != null
+          ? configuredLeverage
+          : (_asInt(payload['leverage'])?.clamp(1, 125) ?? resolvedLeverage);
+      final planTakeProfit = _validatedPercent(
+        _asDouble(payload['takeProfitPercent']),
+        fallback: resolvedTakeProfit,
+      );
+      final planStopLoss = _validatedPercent(
+        _asDouble(payload['stopLossPercent']),
+        fallback: resolvedStopLoss,
+      );
+      final planConfiguredQuantity = _resolveConfiguredQuantity(
+        currentPrice: currentPrice,
+        leverage: planLeverage,
+        fallbackQuantity: fallbackQuantity,
+      );
+      final confidence =
+          _normalizedConfidence(_asDouble(payload['confidence'])) ?? 0.0;
       final sizeFraction = _parseSizeFraction(
         payload,
         signal: signal,
@@ -278,7 +306,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
       );
       final plannedQuantity = _plannedQuantity(
         signal: signal,
-        configuredQuantity: configuredQuantity,
+        configuredQuantity: planConfiguredQuantity,
         sizeFraction: microstructureAdjustedSizeFraction,
       );
       final marketRegime =
@@ -320,6 +348,11 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
               orderBookTrendSnapshot: orderBookTrendSnapshot,
               recentTradeOutcomes: recentTradeOutcomes,
             );
+      final constrainedRationale = _applyDirectionConstraintToRationale(
+        rationale,
+        rawSignal: rawSignal,
+        appliedSignal: signal,
+      );
 
       return StrategyTradePlan(
         strategyName: name,
@@ -331,7 +364,7 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
         takeProfitPercent: planTakeProfit,
         stopLossPercent: planStopLoss,
         quantity: plannedQuantity,
-        rationale: rationale,
+        rationale: constrainedRationale,
         generatedAt: DateTime.now(),
         confidence: confidence,
         sizeFraction: microstructureAdjustedSizeFraction,
@@ -535,6 +568,18 @@ class AiStrategy extends TradingStrategy implements TradePlanningStrategy {
     final shortBias = shortBiasPrice == null
         ? 'No fixed short zone was configured.'
         : 'Short bias becomes stronger at or above $shortBiasPrice using ${shortOrderType.label.toUpperCase()} entries.';
+    final directionRule = switch (tradeDirectionMode) {
+      AiTradeDirectionMode.auto =>
+        'The trader allows both long and short plans. Choose the cleaner side or HOLD.',
+      AiTradeDirectionMode.longOnly =>
+        'The trader only allows LONG plans. If a short would be better, return HOLD instead.',
+      AiTradeDirectionMode.shortOnly =>
+        'The trader only allows SHORT plans. If a long would be better, return HOLD instead.',
+    };
+    final leverageRule = 'Leverage is fixed by the trader at ${leverage}x.';
+    final budgetRule = maxInvestmentUsdt == null || maxInvestmentUsdt! <= 0
+        ? 'No separate AI margin budget is configured; use the max base quantity and portfolio context.'
+        : 'Maximum margin budget: ${maxInvestmentUsdt!.toStringAsFixed(2)} USDT. Approximate notional cap at ${leverage}x is ${(maxInvestmentUsdt! * leverage).toStringAsFixed(2)} USDT.';
     final accountSummary = _buildAccountSummary(
       context,
       leverage: leverage,
@@ -572,7 +617,10 @@ Trader rules:
 - Current price snapshot: $currentPrice
 - $longBias
 - $shortBias
-- Maximum leverage to consider: ${leverage}x
+- Allowed direction: ${tradeDirectionMode.promptLabel}
+- $directionRule
+- $leverageRule
+- $budgetRule
 - Maximum base quantity: ${quantity?.toStringAsFixed(6) ?? 'not configured'}
 - Take profit target: ${takeProfitPercent.toStringAsFixed(2)}%
 - Stop loss limit: ${stopLossPercent.toStringAsFixed(2)}%
@@ -872,7 +920,8 @@ $data
               payload['qtyFraction'],
         ) ??
         fallback;
-    final normalized = raw > 1 ? raw / 100 : raw;
+    final safeRaw = raw.isFinite ? raw : fallback;
+    final normalized = safeRaw > 1 ? safeRaw / 100 : safeRaw;
     return normalized.clamp(0.15, 1.0).toDouble();
   }
 
@@ -988,12 +1037,64 @@ $data
     return TradeOutcomeAnalyzer.summarizeBias(recentTradeOutcomes);
   }
 
+  double? _resolveConfiguredQuantity({
+    required double currentPrice,
+    required int leverage,
+    required double? fallbackQuantity,
+  }) {
+    final budget = maxInvestmentUsdt;
+    if (budget != null &&
+        budget.isFinite &&
+        budget > 0 &&
+        currentPrice.isFinite &&
+        currentPrice > 0 &&
+        leverage > 0) {
+      return (budget * leverage) / currentPrice;
+    }
+    return fallbackQuantity?.isFinite == true ? fallbackQuantity : null;
+  }
+
+  TradingSignal _applyTradeDirectionMode(TradingSignal signal) {
+    return switch (tradeDirectionMode) {
+      AiTradeDirectionMode.auto => signal,
+      AiTradeDirectionMode.longOnly =>
+        signal == TradingSignal.sell ? TradingSignal.hold : signal,
+      AiTradeDirectionMode.shortOnly =>
+        signal == TradingSignal.buy ? TradingSignal.hold : signal,
+    };
+  }
+
+  String _applyDirectionConstraintToRationale(
+    String rationale, {
+    required TradingSignal rawSignal,
+    required TradingSignal appliedSignal,
+  }) {
+    if (rawSignal == appliedSignal || appliedSignal != TradingSignal.hold) {
+      return rationale;
+    }
+
+    final constraint = switch (tradeDirectionMode) {
+      AiTradeDirectionMode.auto => null,
+      AiTradeDirectionMode.longOnly =>
+        'Trader constraint active: LONG only, so the short idea was held back.',
+      AiTradeDirectionMode.shortOnly =>
+        'Trader constraint active: SHORT only, so the long idea was held back.',
+    };
+    if (constraint == null) {
+      return rationale;
+    }
+    return '$constraint $rationale';
+  }
+
   double? _plannedQuantity({
     required TradingSignal signal,
     required double? configuredQuantity,
     required double sizeFraction,
   }) {
-    if (configuredQuantity == null || configuredQuantity <= 0) {
+    if (configuredQuantity == null ||
+        !configuredQuantity.isFinite ||
+        configuredQuantity <= 0 ||
+        !sizeFraction.isFinite) {
       return null;
     }
     if (signal == TradingSignal.hold) {
@@ -1017,10 +1118,10 @@ $data
     if (value == null) {
       return null;
     }
-    if (value is num) {
-      return value.toDouble();
-    }
-    return double.tryParse(value.toString());
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value.toString());
+    return parsed?.isFinite == true ? parsed : null;
   }
 
   int? _asInt(dynamic value) {
@@ -1031,9 +1132,45 @@ $data
       return value;
     }
     if (value is num) {
-      return value.toInt();
+      return value.isFinite ? value.toInt() : null;
     }
     return int.tryParse(value.toString());
+  }
+
+  double? _validatedEntryPrice(
+    double? value, {
+    required double currentPrice,
+    required double? fallback,
+  }) {
+    if (value == null ||
+        !value.isFinite ||
+        value <= 0 ||
+        !currentPrice.isFinite ||
+        currentPrice <= 0) {
+      return fallback;
+    }
+    final ratio = value / currentPrice;
+    return ratio >= 0.5 && ratio <= 1.5 ? value : fallback;
+  }
+
+  double _validatedPercent(double? value, {required double fallback}) {
+    if (value == null || !value.isFinite || value < 0 || value > 100) {
+      return fallback.isFinite && fallback >= 0 && fallback <= 100
+          ? fallback
+          : 0;
+    }
+    return value;
+  }
+
+  double? _normalizedConfidence(double? value) {
+    if (value == null || !value.isFinite || value < 0) {
+      return null;
+    }
+    final normalized = value > 1 && value <= 100 ? value / 100 : value;
+    if (normalized < 0 || normalized > 1) {
+      return null;
+    }
+    return normalized;
   }
 
   String _errorDetails(DioException error) {

@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:ifutures/models/trade.dart';
 import 'package:ifutures/services/performance_summary_calculator.dart';
 
-Trade _exitTrade(double pnl, DateTime timestamp) {
+Trade _exitTrade(double pnl, DateTime timestamp, {double? fee}) {
   return Trade(
     symbol: 'GALAUSDT',
     side: 'BUY',
@@ -13,6 +13,7 @@ Trade _exitTrade(double pnl, DateTime timestamp) {
     strategy: 'ALGO',
     kind: 'EXIT',
     realizedPnl: pnl,
+    fee: fee,
   );
 }
 
@@ -47,7 +48,7 @@ void main() {
     expect(summary.bestTrade, 10);
     expect(summary.worstTrade, -4);
     expect(summary.avgTrade, 4);
-    expect(summary.maxDrawdown, closeTo(40.0, 0.01));
+    expect(summary.maxDrawdown, closeTo(4.0, 0.01));
     expect(summary.profitFactor, closeTo(4.0, 0.01));
     expect(summary.hasData, isTrue);
   });
@@ -70,6 +71,35 @@ void main() {
     expect(summary.bestTrade, 3);
     expect(summary.worstTrade, 2);
   });
+
+  test('uses realized PnL after recorded exit commission', () {
+    final summary = PerformanceSummaryCalculator.calculate([
+      _exitTrade(1, DateTime(2026, 3, 19, 10), fee: 0.10),
+      _exitTrade(0.04, DateTime(2026, 3, 19, 11), fee: 0.05),
+    ]);
+
+    expect(summary.totalTrades, 2);
+    expect(summary.winningTrades, 1);
+    expect(summary.losingTrades, 1);
+    expect(summary.totalPnL, closeTo(0.89, 1e-12));
+    expect(summary.bestTrade, closeTo(0.90, 1e-12));
+    expect(summary.worstTrade, closeTo(-0.01, 1e-12));
+    expect(summary.avgTrade, closeTo(0.445, 1e-12));
+    expect(summary.profitFactor, closeTo(90, 1e-9));
+  });
+
+  test(
+    'reports all-loss drawdown as absolute USDT instead of zero percent',
+    () {
+      final summary = PerformanceSummaryCalculator.calculate([
+        _exitTrade(-3, DateTime(2026, 3, 19, 10), fee: 0.10),
+        _exitTrade(-2, DateTime(2026, 3, 19, 11), fee: 0.05),
+      ]);
+
+      expect(summary.maxDrawdown, closeTo(5.15, 1e-12));
+      expect(summary.totalPnL, closeTo(-5.15, 1e-12));
+    },
+  );
 
   test('returns an empty summary when there are no realized exits', () {
     final summary = PerformanceSummaryCalculator.calculate([

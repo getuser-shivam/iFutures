@@ -132,7 +132,12 @@ class StrategyTradePlan {
     TradingSignal.hold => 'HOLD',
   };
 
-  String get orderTypeLabel => orderType?.label ?? 'Watch';
+  String get orderTypeLabel {
+    if (signal == TradingSignal.hold) {
+      return 'Waiting';
+    }
+    return orderType?.label ?? 'Market';
+  }
 
   String get summaryLabel => '$actionLabel | $orderTypeLabel';
 
@@ -263,9 +268,6 @@ ManualOrderType selectAutoOrderType(List<Kline> history, TradingSignal signal) {
   }
   if (movePercent >= 0.9) {
     return ManualOrderType.market;
-  }
-  if (rangePercent <= 1.0) {
-    return ManualOrderType.postOnly;
   }
   return ManualOrderType.limit;
 }

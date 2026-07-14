@@ -47,6 +47,16 @@ class GalleryScreen extends StatelessWidget {
             ),
             SizedBox(height: 16),
             _MilestoneCard(
+              version: 'Roadmap',
+              date: '2026-04-08',
+              features: [
+                'P0: Public web safety mode with explicit browser guardrails and blocked live-trade defaults.',
+                'P1: AI confidence backtesting and scorecards to calibrate confidence against realized outcomes.',
+                'P1: Partial take-profit and staged exits shared by AI and ALGO execution plans.',
+                'P1/P2: Multi-exchange foundation plus reliability hardening (redaction, modularization, portability).',
+              ],
+            ),
+            _MilestoneCard(
               version: '1.0.8',
               date: '2026-04-02',
               features: [

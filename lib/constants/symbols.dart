@@ -1,17 +1,28 @@
-const String defaultSymbol = 'GALAUSDT';
+const String ariausdtSymbol = 'ARIAUSDT';
 const String triausdtSymbol = 'TRIAUSDT';
+const String sirenusdtSymbol = 'SIRENUSDT';
+const String truusdtSymbol = 'TRUUSDT';
+const String btcusdtSymbol = 'BTCUSDT';
+const String defaultSymbol = ariausdtSymbol;
+
+const List<String> coreTradingSymbols = [
+  ariausdtSymbol,
+  triausdtSymbol,
+  sirenusdtSymbol,
+  btcusdtSymbol,
+];
 
 const List<String> defaultSymbols = [
-  defaultSymbol,
-  'BTCUSDT',
+  ...coreTradingSymbols,
+  'GALAUSDT',
   'ETHUSDT',
   'BNBUSDT',
   'SOLUSDT',
-  triausdtSymbol,
+  truusdtSymbol,
 ];
 
 const List<String> marketWatchlistSymbols = [
-  'BTCUSDT',
+  btcusdtSymbol,
   'ETHUSDT',
   'BNBUSDT',
   'SOLUSDT',

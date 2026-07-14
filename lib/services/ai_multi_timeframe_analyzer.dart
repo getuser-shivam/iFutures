@@ -73,13 +73,13 @@ class AiMultiTimeframeAnalyzer {
       }
       aggregated.add(
         Kline(
-          openTime: openTime!,
-          open: open!,
-          high: high!,
-          low: low!,
-          close: close!,
+          openTime: openTime,
+          open: open,
+          high: high,
+          low: low,
+          close: close,
           volume: volume,
-          closeTime: closeTime!,
+          closeTime: closeTime,
         ),
       );
     }

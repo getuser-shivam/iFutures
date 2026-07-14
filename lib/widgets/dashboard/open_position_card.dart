@@ -20,7 +20,7 @@ class OpenPositionCard extends ConsumerWidget {
         final risk = riskAsync.valueOrNull;
         final isOpen = position != null;
         final sideLabel = isOpen
-            ? (position!.isLong ? 'LONG' : 'SHORT')
+            ? (position.isLong ? 'LONG' : 'SHORT')
             : 'NONE';
         final sideColor = position == null
             ? Colors.blueGrey
@@ -29,6 +29,7 @@ class OpenPositionCard extends ConsumerWidget {
         final currentPrice = latestPrice;
         final entryPrice = position?.entryPrice;
         final quantity = position?.quantity;
+        final liquidationPrice = position?.liquidationPrice;
         final leverage = (risk?.leverage ?? 1).clamp(1, 125);
         final exposure =
             position == null || entryPrice == null || quantity == null
@@ -49,9 +50,26 @@ class OpenPositionCard extends ConsumerWidget {
         final roePercent = pnl == null || marginUsed == null || marginUsed == 0
             ? null
             : (pnl / marginUsed) * 100;
+        final liquidationDistancePercent =
+            liquidationPrice == null ||
+                liquidationPrice <= 0 ||
+                currentPrice == null ||
+                currentPrice <= 0
+            ? null
+            : ((currentPrice - liquidationPrice).abs() / currentPrice) * 100;
 
-        final stopLossPercent = risk?.stopLossPercent ?? 0.0;
-        final takeProfitPercent = risk?.takeProfitPercent ?? 0.0;
+        final stopLossPercent = position == null || risk == null
+            ? 0.0
+            : risk.resolveStopLossPercent(
+                position.entryPrice,
+                quantity: position.quantity,
+              );
+        final takeProfitPercent = position == null || risk == null
+            ? 0.0
+            : risk.resolveTakeProfitPercent(
+                position.entryPrice,
+                quantity: position.quantity,
+              );
         final stopLossPrice = position != null && stopLossPercent > 0
             ? position.stopLossPrice(stopLossPercent)
             : null;
@@ -113,7 +131,9 @@ class OpenPositionCard extends ConsumerWidget {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Next ticket starts from ${_formatQuantity(risk?.tradeQuantity)} units at ${leverage}x leverage.',
+                      risk?.investmentUsdt == null || risk!.investmentUsdt! <= 0
+                          ? 'Next ticket starts from ${_formatQuantity(risk?.tradeQuantity)} units at ${leverage}x leverage.'
+                          : 'Next ticket budget is ${_formatUsdt(risk.investmentUsdt)} margin at ${leverage}x leverage.',
                       style: const TextStyle(
                         color: AppColors.textMuted,
                         fontSize: 11,
@@ -193,6 +213,18 @@ class OpenPositionCard extends ConsumerWidget {
                                   ? AppColors.positive
                                   : AppColors.negative),
                         helper: 'PnL vs est. margin',
+                      ),
+                      _InfoBlock(
+                        label: 'Liquidation',
+                        value: _formatPrice(liquidationPrice),
+                        helper: liquidationPrice == null
+                            ? 'Not provided by sync'
+                            : (liquidationDistancePercent == null
+                                  ? 'Live distance unavailable'
+                                  : '${liquidationDistancePercent.toStringAsFixed(2)}% away'),
+                        valueColor: liquidationPrice == null
+                            ? AppColors.textSecondary
+                            : AppColors.warning,
                       ),
                     ];
 

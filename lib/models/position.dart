@@ -6,6 +6,7 @@ class Position {
   final double entryPrice;
   final double quantity;
   final DateTime entryTime;
+  final double? liquidationPrice;
 
   Position({
     required this.symbol,
@@ -13,9 +14,12 @@ class Position {
     required this.entryPrice,
     required this.quantity,
     required this.entryTime,
+    this.liquidationPrice,
   });
 
   bool get isLong => side == PositionSide.long;
+  bool get hasLiquidationPrice =>
+      liquidationPrice != null && liquidationPrice! > 0;
 
   double stopLossPrice(double percent) {
     if (percent <= 0) return entryPrice;

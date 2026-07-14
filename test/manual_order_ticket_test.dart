@@ -81,12 +81,13 @@ void main() {
 
     expect(find.text('Latest AI Analyst Plan'), findsOneWidget);
     expect(find.text('USE LATEST PLAN'), findsOneWidget);
-    expect(find.text('MARKET OPEN LONG'), findsOneWidget);
+    expect(find.text('PAPER SIMULATION'), findsOneWidget);
+    expect(find.text('SIMULATE MARKET OPEN LONG'), findsOneWidget);
 
     await tester.tap(find.text('USE LATEST PLAN'));
     await tester.pump();
 
-    expect(find.text('POST ONLY OPEN SHORT'), findsOneWidget);
+    expect(find.text('SIMULATE POST ONLY OPEN SHORT'), findsOneWidget);
     expect(
       find.text('Loaded AI Analyst plan into the manual ticket.'),
       findsOneWidget,

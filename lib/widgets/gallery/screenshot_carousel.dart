@@ -18,34 +18,7 @@ class _ScreenshotCarouselState extends State<ScreenshotCarousel> {
       'path': 'assets/screenshots/screenshot_app_v1.0.8.png',
       'title': 'Version 1.0.8 - AI Trade Intelligence',
       'description':
-          'Latest: protection engine, access verification, and order-book-aware AI execution',
-    },
-    {
-      'path': 'assets/screenshots/screenshot_app_v1.0.7.png',
-      'title': 'Version 1.0.7 - Market Analysis',
-      'description': 'Latest: live BTC/ETH/BNB/SOL pulse and crypto news',
-    },
-    {
-      'path': 'assets/screenshots/screenshot_app_v1.0.6.png',
-      'title': 'Version 1.0.6 - RSI Strategy Tuning',
-      'description':
-          'Latest: Preset-based RSI controls in Settings and live algorithm labeling',
-    },
-    {
-      'path': 'assets/screenshots/screenshot_app_v1.0.3.png',
-      'title': 'Version 1.0.3 - Trade History',
-      'description':
-          'Latest: Real-time trade tracking with buy/sell indicators',
-    },
-    {
-      'path': 'assets/screenshots/screenshot_app_v1.0.2.png',
-      'title': 'Version 1.0.2 - Status Indicators',
-      'description': 'Added bot and engine status chips',
-    },
-    {
-      'path': 'assets/screenshots/screenshot_app_v1.0.1.png',
-      'title': 'Version 1.0.1 - Initial Dashboard',
-      'description': 'Basic trading dashboard with price chart and controls',
+          'Current screenshot: protection engine, verification workflow, and order-book-aware AI execution',
     },
   ];
 

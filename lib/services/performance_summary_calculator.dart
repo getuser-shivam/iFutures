@@ -22,15 +22,9 @@ class PerformanceSummaryCalculator {
       );
     }
 
-    final tradePnLs = realizedTrades
-        .map((trade) => trade.realizedPnl!)
-        .toList();
-    final winningTrades = realizedTrades
-        .where((trade) => trade.realizedPnl! > 0)
-        .length;
-    final losingTrades = realizedTrades
-        .where((trade) => trade.realizedPnl! < 0)
-        .length;
+    final tradePnLs = realizedTrades.map(realizedPnlAfterFee).toList();
+    final winningTrades = tradePnLs.where((pnl) => pnl > 0).length;
+    final losingTrades = tradePnLs.where((pnl) => pnl < 0).length;
 
     final totalPnL = tradePnLs.fold(0.0, (sum, pnl) => sum + pnl);
     final bestTrade = tradePnLs.reduce((a, b) => a > b ? a : b);
@@ -39,7 +33,7 @@ class PerformanceSummaryCalculator {
 
     double cumulativePnL = 0.0;
     double peakPnL = 0.0;
-    double maxDrawdown = 0.0;
+    double maxDrawdownUsdt = 0.0;
     double grossProfit = 0.0;
     double grossLoss = 0.0;
 
@@ -56,11 +50,9 @@ class PerformanceSummaryCalculator {
         peakPnL = cumulativePnL;
       }
 
-      if (peakPnL > 0) {
-        final drawdown = ((peakPnL - cumulativePnL) / peakPnL) * 100;
-        if (drawdown > maxDrawdown) {
-          maxDrawdown = drawdown;
-        }
+      final drawdownUsdt = peakPnL - cumulativePnL;
+      if (drawdownUsdt > maxDrawdownUsdt) {
+        maxDrawdownUsdt = drawdownUsdt;
       }
     }
 
@@ -76,7 +68,7 @@ class PerformanceSummaryCalculator {
       bestTrade: bestTrade,
       worstTrade: worstTrade,
       avgTrade: avgTrade,
-      maxDrawdown: maxDrawdown,
+      maxDrawdown: maxDrawdownUsdt,
       profitFactor: profitFactor,
       windowStart: windowStart,
       windowEnd: windowEnd,
@@ -91,6 +83,12 @@ class PerformanceSummaryCalculator {
     final end = start.add(const Duration(days: 1));
     final filtered = filterTradesForDay(trades, day);
     return calculate(filtered, windowStart: start, windowEnd: end);
+  }
+
+  static double realizedPnlAfterFee(Trade trade) {
+    final realizedPnl = trade.realizedPnl ?? 0.0;
+    final fee = trade.fee;
+    return realizedPnl - (fee?.isFinite == true ? fee! : 0.0);
   }
 
   static List<Trade> filterTradesForDay(Iterable<Trade> trades, DateTime day) {

@@ -4,6 +4,7 @@ import '../models/manual_order.dart';
 import '../models/trade.dart';
 import '../models/risk_settings.dart';
 import '../models/position.dart';
+import '../models/live_order.dart';
 import '../models/binance_account_status.dart';
 import '../models/connection_status.dart';
 import '../models/ai_trade_outcome_snapshot.dart';
@@ -27,11 +28,17 @@ class TradingEngine {
   final RiskSettings riskSettings;
   final String symbol;
   final List<String> trackedSymbols;
+  final String clientOrderOwnerId;
+  final Duration ambiguousEntryMinimumQuarantine;
+  final int ambiguousEntryNotFoundConfirmations;
+  final Duration userDataRetryBaseDelay;
+  final Duration userDataRetryMaxDelay;
 
   List<Kline> _klines = [];
   List<Trade> _trades = [];
   List<Trade> _accountTrades = [];
   List<PendingManualOrder> _pendingManualOrders = [];
+  List<LiveOrder> _openOrders = [];
   List<StrategyConsoleEntry> _consoleEntries = [];
   bool _isAutoTradingEnabled = false;
   bool _isStreaming = false;
@@ -41,10 +48,19 @@ class TradingEngine {
   Timer? _exchangeSyncTimer;
   Position? _openPosition;
   StreamSubscription? _wsSubscription;
+  StreamSubscription? _userDataSubscription;
+  Timer? _userDataKeepAliveTimer;
+  Timer? _userDataSyncDebounceTimer;
+  Timer? _userDataRetryTimer;
+  String? _userDataListenKey;
+  bool _isStartingUserDataStream = false;
+  int _userDataRetryAttempt = 0;
   Timer? _connectionTimer;
   DateTime? _lastMessageAt;
   int? _lastLatencyMs;
   BinanceAccountStatus _binanceAccountStatus;
+  BinanceFuturesPositionMode _futuresPositionMode =
+      BinanceFuturesPositionMode.unknown;
   double? _walletBalance;
   double? _availableBalance;
   int? _openPositionCount;
@@ -54,11 +70,28 @@ class TradingEngine {
   DateTime? _cooldownUntil;
   DateTime? _protectionLockUntil;
   String? _protectionLockReason;
+  double? _activeTakeProfitPrice;
+  double? _activeStopLossPrice;
+  bool _isRiskExitInFlight = false;
+  DateTime? _riskExitUncertainUntil;
+  bool _isProtectionOrderSyncInFlight = false;
+  bool _isStrategyEvaluationInFlight = false;
+  bool _isExchangeSyncInFlight = false;
+  Completer<void>? _exchangeSyncCompleter;
+  bool _isOrderSubmissionInFlight = false;
+  bool _activeSubmissionMayOpenExposure = false;
+  Completer<void>? _orderSubmissionCompleter;
+  bool _isDisarming = false;
+  final Map<String, _AmbiguousEntryIntent> _ambiguousEntryIntents = {};
+  int _executionGeneration = 0;
+  bool _ownsActivePosition = false;
+  bool _hasOwnedEntryIntent = false;
   ProtectionStatus _protectionStatus = const ProtectionStatus.ready();
   TradingSignal? _lastSignal;
   StrategyTradePlan? _lastDecisionPlan;
   String? _lastLoggedPlanFingerprint;
   String? _lastExecutionBlockFingerprint;
+  String? _lastLiveStrategyFingerprint;
 
   final _klineController = StreamController<List<Kline>>.broadcast();
   final _tradeController = StreamController<List<Trade>>.broadcast();
@@ -75,6 +108,9 @@ class TradingEngine {
       StreamController<List<StrategyConsoleEntry>>.broadcast();
   final _pendingOrderController =
       StreamController<List<PendingManualOrder>>.broadcast();
+  final _openOrderController = StreamController<List<LiveOrder>>.broadcast();
+  final _orderBookSnapshotController =
+      StreamController<OrderBookSnapshot?>.broadcast();
 
   Stream<List<Kline>> get klineStream => _klineController.stream;
   Stream<List<Trade>> get tradeStream => _tradeController.stream;
@@ -92,6 +128,9 @@ class TradingEngine {
       _consoleLogController.stream;
   Stream<List<PendingManualOrder>> get pendingOrderStream =>
       _pendingOrderController.stream;
+  Stream<List<LiveOrder>> get openOrderStream => _openOrderController.stream;
+  Stream<OrderBookSnapshot?> get orderBookSnapshotStream =>
+      _orderBookSnapshotController.stream;
 
   TradingEngine({
     required this.apiService,
@@ -101,9 +140,15 @@ class TradingEngine {
     required this.riskSettings,
     required this.symbol,
     List<String> trackedSymbols = const [],
+    String clientOrderOwnerId = 'local000',
+    this.ambiguousEntryMinimumQuarantine = const Duration(seconds: 10),
+    this.ambiguousEntryNotFoundConfirmations = 3,
+    this.userDataRetryBaseDelay = const Duration(seconds: 1),
+    this.userDataRetryMaxDelay = const Duration(seconds: 30),
   }) : _binanceAccountStatus = BinanceAccountStatus.notConfigured(
          isTestnet: apiService.isTestnet,
        ),
+       clientOrderOwnerId = _normalizeClientOrderOwnerId(clientOrderOwnerId),
        trackedSymbols = _normalizeTrackedSymbols(symbol, trackedSymbols);
 
   bool get isStreaming => _isStreaming;
@@ -113,9 +158,12 @@ class TradingEngine {
   List<Kline> get klines => _klines;
   List<Trade> get trades => _trades;
   List<Trade> get accountTrades => List.unmodifiable(_accountTrades);
+  List<LiveOrder> get openOrders => List.unmodifiable(_openOrders);
   double? get walletBalance => _walletBalance;
   double? get availableBalance => _availableBalance;
   int? get openPositionCount => _openPositionCount;
+  OrderBookSnapshot? get orderBookSnapshot => _orderBookSnapshot;
+  DateTime? get orderBookSyncedAt => _orderBookSyncedAt;
   List<OrderBookSnapshot> get orderBookHistory =>
       List.unmodifiable(_orderBookHistory);
   OrderBookTrendSnapshot? get orderBookTrendSnapshot =>
@@ -132,6 +180,8 @@ class TradingEngine {
   TradingSignal? get lastSignal => _lastSignal;
   StrategyTradePlan? get lastDecisionPlan => _lastDecisionPlan;
   BinanceAccountStatus get lastBinanceAccountStatus => _binanceAccountStatus;
+  bool get hasExchangeCredentials => apiService.hasCredentials;
+  BinanceFuturesPositionMode get futuresPositionMode => _futuresPositionMode;
 
   Future<void> startMarketData() async {
     if (_isStreaming) return;
@@ -144,7 +194,9 @@ class TradingEngine {
     _consoleLogController.add(consoleEntries);
     _accountTradeController.add(accountTrades);
     _protectionController.add(_protectionStatus);
+    _orderBookSnapshotController.add(_orderBookSnapshot);
     _emitPendingOrders();
+    _emitOpenOrders();
     _emitBinanceAccountStatus(
       apiService.hasCredentials
           ? BinanceAccountStatus.checking(
@@ -164,10 +216,15 @@ class TradingEngine {
       if (!syncedExchangeState) {
         _trades = [];
         _accountTrades = [];
+        _openOrders = [];
         _openPosition = null;
+        _clearPlanRiskTargets();
         _tradeController.add(_trades);
         _accountTradeController.add(_accountTrades);
         _positionController.add(_openPosition);
+        _emitOpenOrders();
+      } else {
+        await _startUserDataStream();
       }
     } else {
       await _loadPersistedTrades();
@@ -177,12 +234,13 @@ class TradingEngine {
     try {
       final historicalData = await apiService.getKlines(
         symbol: symbol,
-        limit: 100,
+        limit: 1440,
       );
       _klines = historicalData.map((e) => Kline.fromJson(e)).toList();
       _klineController.add(_klines);
       _logConsole('Loaded ${_klines.length} historical candles for $symbol.');
       if (_klines.isNotEmpty) {
+        await _refreshOrderBookContextIfNeeded(force: true);
         await _evaluateStrategy();
       }
     } catch (e) {
@@ -231,23 +289,141 @@ class TradingEngine {
   }
 
   Future<void> enableTrading() async {
+    _executionGeneration++;
     _isAutoTradingEnabled = true;
     _manualOverrideActive = false;
+    _lastLiveStrategyFingerprint = null;
     _logConsole('Auto execution armed for ${strategy.name}.');
     if (!_isStreaming) {
       await startMarketData();
     }
   }
 
-  void disableTrading({String reason = 'manual_stop'}) {
+  void disableTrading({
+    String reason = 'manual_stop',
+    bool cancelWorkingEntries = true,
+  }) {
+    _executionGeneration++;
     _isAutoTradingEnabled = false;
     _manualOverrideActive = false;
+    _lastLiveStrategyFingerprint = null;
     _logConsole(
       'Auto execution stopped (${reason.replaceAll('_', ' ')}).',
       level: StrategyConsoleLevel.warning,
     );
-    if (_openPosition != null && _klines.isNotEmpty) {
-      _closePosition(_klines.last.close, reason);
+    if (cancelWorkingEntries &&
+        _isExchangeSyncMode &&
+        apiService.allowOrderMutations) {
+      unawaited(
+        cancelBotEntryOrders(reason: reason).catchError((Object error) {
+          _logExecutionBlocked(
+            'Could not cancel every iFutures entry while stopping: $error',
+          );
+          return 0;
+        }),
+      );
+    }
+  }
+
+  Future<void> disarmTrading({String reason = 'manual_stop'}) async {
+    if (_isDisarming) {
+      throw StateError('STOP reconciliation is already in progress.');
+    }
+    _isDisarming = true;
+    try {
+      final entrySubmissionWasInFlight =
+          _isOrderSubmissionInFlight && _activeSubmissionMayOpenExposure;
+      final hadPositionBeforeDisarm = _openPosition != null;
+      final submissionInFlight = _orderSubmissionCompleter?.future;
+      disableTrading(reason: reason, cancelWorkingEntries: false);
+      if (submissionInFlight != null) {
+        _logConsole(
+          'Waiting for the in-flight Binance request before completing STOP.',
+          level: StrategyConsoleLevel.warning,
+        );
+        await submissionInFlight;
+      }
+      if (_isExchangeSyncMode && apiService.allowOrderMutations) {
+        final syncedAfterSubmission = await _syncExchangeState();
+        await cancelBotEntryOrders(reason: reason);
+        final syncedAfterCancellation = await _syncExchangeState();
+
+        if (entrySubmissionWasInFlight &&
+            !hadPositionBeforeDisarm &&
+            _openPosition != null &&
+            _ownsActivePosition) {
+          await _flattenUnexpectedPostDisarmPosition(reason: reason);
+        }
+
+        await _reconcileAmbiguousEntryIntents(
+          accountSnapshotIsCurrent: syncedAfterCancellation,
+        );
+        if (_ambiguousEntryIntents.isNotEmpty) {
+          throw StateError(
+            'STOP is active, but Binance still has an unresolved entry intent (${_ambiguousEntryIntents.keys.join(', ')}). New entries remain quarantined; verify the account before leaving this symbol.',
+          );
+        }
+        if (entrySubmissionWasInFlight &&
+            !syncedAfterSubmission &&
+            !syncedAfterCancellation) {
+          throw StateError(
+            'STOP is active, but Binance account reconciliation failed after an in-flight entry. Verify positions and orders before leaving this symbol.',
+          );
+        }
+      }
+    } finally {
+      _isDisarming = false;
+    }
+  }
+
+  Future<void> _flattenUnexpectedPostDisarmPosition({
+    required String reason,
+  }) async {
+    final position = _openPosition;
+    if (position == null || !_ownsActivePosition) {
+      return;
+    }
+    if (!_beginOrderSubmission(
+      mayOpenExposure: false,
+      allowWhileDisarming: true,
+    )) {
+      throw StateError(
+        'Could not flatten the post-STOP fill because another order submission started.',
+      );
+    }
+
+    try {
+      _logExecutionBlocked(
+        'An iFutures entry filled while STOP was waiting. Sending a reduce-only market close so no unrequested exposure remains.',
+      );
+      final closeAction = position.isLong
+          ? ManualOrderAction.closeLong
+          : ManualOrderAction.closeShort;
+      await _submitExchangeOrder(
+        closeAction,
+        quantity: position.quantity,
+        orderType: ManualOrderType.market,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await _syncExchangeState(logSuccess: true);
+      if (_openPosition != null) {
+        await _reconcileExchangeProtectionOrders(plan: _lastDecisionPlan);
+        throw StateError(
+          'The post-STOP entry close was sent but the position is still visible. Exchange stop protection was retained; verify Binance before leaving this symbol.',
+        );
+      }
+      _logConsole(
+        'Flattened the entry that filled during ${reason.replaceAll('_', ' ')}.',
+        level: StrategyConsoleLevel.warning,
+      );
+    } catch (_) {
+      await _syncExchangeState();
+      if (_openPosition != null && _ownsActivePosition) {
+        await _reconcileExchangeProtectionOrders(plan: _lastDecisionPlan);
+      }
+      rethrow;
+    } finally {
+      _finishOrderSubmission();
     }
   }
 
@@ -260,13 +436,21 @@ class TradingEngine {
         _klines[_klines.length - 1] = newKline;
       } else {
         _klines.add(newKline);
-        if (_klines.length > 500) _klines.removeAt(0);
+        if (_klines.length > 1600) _klines.removeAt(0);
       }
     }
     _klineController.add(_klines);
   }
 
   Future<void> _evaluateStrategy() async {
+    if (_isStrategyEvaluationInFlight) {
+      _logConsole(
+        'Strategy evaluation skipped because the previous evaluation is still running.',
+        level: StrategyConsoleLevel.warning,
+      );
+      return;
+    }
+    _isStrategyEvaluationInFlight = true;
     try {
       await _refreshOrderBookContextIfNeeded();
       final orderBookTrendSnapshot = this.orderBookTrendSnapshot;
@@ -301,7 +485,6 @@ class TradingEngine {
       } else {
         signal = await strategy.evaluate(_klines);
       }
-      print('Strategy signal: $signal');
       _lastSignal = signal;
       _lastDecisionPlan = plan;
       _signalController.add(signal);
@@ -310,16 +493,17 @@ class TradingEngine {
       if (!_isAutoTradingEnabled) return;
 
       if (signal == TradingSignal.buy) {
-        _handleSignal(PositionSide.long, plan: plan);
+        await _handleSignal(PositionSide.long, plan: plan);
       } else if (signal == TradingSignal.sell) {
-        _handleSignal(PositionSide.short, plan: plan);
+        await _handleSignal(PositionSide.short, plan: plan);
       }
     } catch (e) {
       _logConsole(
         'Strategy evaluation failed: $e',
         level: StrategyConsoleLevel.error,
       );
-      print('Strategy evaluation failed: $e');
+    } finally {
+      _isStrategyEvaluationInFlight = false;
     }
   }
 
@@ -329,68 +513,56 @@ class TradingEngine {
     await _evaluateStrategy();
   }
 
-  void _handleSignal(PositionSide desiredSide, {StrategyTradePlan? plan}) {
-    _handleSignalWithReason(desiredSide, 'strategy', plan: plan);
+  Future<void> _handleSignal(
+    PositionSide desiredSide, {
+    StrategyTradePlan? plan,
+  }) async {
+    await _handleSignalWithReason(desiredSide, 'strategy', plan: plan);
   }
 
   Future<void> manualEnterLong() async {
-    await _ensureMarketData();
-    if (_isExchangeSyncMode) {
-      _logExecutionBlocked(
-        'Manual long requested, but live order routing is not enabled. Binance sync is read-only right now.',
-      );
-      return;
-    }
-    takeManualControl();
-    _executeImmediateManualAction(
-      ManualOrderAction.openLong,
-      quantity: riskSettings.tradeQuantity,
-      executionPrice: _klines.last.close,
-      orderType: ManualOrderType.market,
-      requestedPrice: _klines.last.close,
+    final currentPrice = _klines.isNotEmpty ? _klines.last.close : null;
+    await submitManualOrder(
+      ManualOrderRequest(
+        action: ManualOrderAction.openLong,
+        orderType: ManualOrderType.market,
+        quantity:
+            riskSettings.resolveQuantity(currentPrice) ??
+            riskSettings.tradeQuantity,
+      ),
     );
   }
 
   Future<void> manualEnterShort() async {
-    await _ensureMarketData();
-    if (_isExchangeSyncMode) {
-      _logExecutionBlocked(
-        'Manual short requested, but live order routing is not enabled. Binance sync is read-only right now.',
-      );
-      return;
-    }
-    takeManualControl();
-    _executeImmediateManualAction(
-      ManualOrderAction.openShort,
-      quantity: riskSettings.tradeQuantity,
-      executionPrice: _klines.last.close,
-      orderType: ManualOrderType.market,
-      requestedPrice: _klines.last.close,
+    final currentPrice = _klines.isNotEmpty ? _klines.last.close : null;
+    await submitManualOrder(
+      ManualOrderRequest(
+        action: ManualOrderAction.openShort,
+        orderType: ManualOrderType.market,
+        quantity:
+            riskSettings.resolveQuantity(currentPrice) ??
+            riskSettings.tradeQuantity,
+      ),
     );
   }
 
   Future<void> manualClose() async {
-    await _ensureMarketData();
-    if (_isExchangeSyncMode) {
-      _logExecutionBlocked(
-        'Manual close requested, but live order routing is not enabled. Binance sync is read-only right now.',
-      );
+    if (_openPosition == null) {
       return;
     }
-    takeManualControl();
-    if (_openPosition == null || _klines.isEmpty) return;
-    _executeImmediateManualAction(
-      _openPosition!.isLong
-          ? ManualOrderAction.closeLong
-          : ManualOrderAction.closeShort,
-      quantity: _openPosition!.quantity,
-      executionPrice: _klines.last.close,
-      orderType: ManualOrderType.market,
-      requestedPrice: _klines.last.close,
+    await submitManualOrder(
+      ManualOrderRequest(
+        action: _openPosition!.isLong
+            ? ManualOrderAction.closeLong
+            : ManualOrderAction.closeShort,
+        orderType: ManualOrderType.market,
+        quantity: _openPosition!.quantity,
+      ),
     );
   }
 
   void takeManualControl() {
+    _executionGeneration++;
     _isAutoTradingEnabled = false;
     _manualOverrideActive = true;
     _logConsole(
@@ -399,23 +571,83 @@ class TradingEngine {
     );
   }
 
+  bool _beginOrderSubmission({
+    required bool mayOpenExposure,
+    bool allowWhileDisarming = false,
+  }) {
+    if (_isOrderSubmissionInFlight || (_isDisarming && !allowWhileDisarming)) {
+      return false;
+    }
+    _isOrderSubmissionInFlight = true;
+    _activeSubmissionMayOpenExposure = mayOpenExposure;
+    _orderSubmissionCompleter = Completer<void>();
+    return true;
+  }
+
+  void _finishOrderSubmission() {
+    _isOrderSubmissionInFlight = false;
+    _activeSubmissionMayOpenExposure = false;
+    final completer = _orderSubmissionCompleter;
+    _orderSubmissionCompleter = null;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete();
+    }
+  }
+
   Future<ManualOrderSubmissionResult> submitManualOrder(
     ManualOrderRequest request,
   ) async {
-    await _ensureMarketData();
-
-    if (_isExchangeSyncMode) {
-      _logExecutionBlocked(
-        'Manual ticket blocked in read-only Binance sync mode. No simulated trade was created.',
-      );
+    if (_isDisarming) {
       return const ManualOrderSubmissionResult(
         accepted: false,
         message:
-            'Binance sync mode is read-only right now. Real order routing is not enabled, so no local simulated trade was created.',
+            'STOP is reconciling Binance orders. Wait for it to finish before submitting another order.',
       );
     }
+    if (!_beginOrderSubmission(mayOpenExposure: request.action.isOpenAction)) {
+      return const ManualOrderSubmissionResult(
+        accepted: false,
+        message: 'Another order is still being submitted. Wait for its result.',
+      );
+    }
+    try {
+      return await _submitManualOrderUnlocked(request);
+    } finally {
+      _finishOrderSubmission();
+    }
+  }
 
-    if (request.quantity <= 0) {
+  Future<ManualOrderSubmissionResult> _submitManualOrderUnlocked(
+    ManualOrderRequest request,
+  ) async {
+    final actualRouting = !_isExchangeSyncMode
+        ? ManualOrderRoutingExpectation.paper
+        : apiService.isTestnet
+        ? ManualOrderRoutingExpectation.binanceDemo
+        : ManualOrderRoutingExpectation.binanceLive;
+    if (request.routingExpectation != null &&
+        request.routingExpectation != actualRouting) {
+      return const ManualOrderSubmissionResult(
+        accepted: false,
+        message:
+            'Order routing changed while the ticket was open. Review the updated PAPER or BINANCE label, then submit again.',
+      );
+    }
+    await _ensureMarketData();
+
+    if (_isExchangeSyncMode) {
+      final blockMessage = await _ensureLiveManualRoutingReady();
+      if (blockMessage != null) {
+        _logExecutionBlocked(blockMessage);
+        return ManualOrderSubmissionResult(
+          accepted: false,
+          message: blockMessage,
+        );
+      }
+      return _submitLiveManualOrder(request);
+    }
+
+    if (!request.quantity.isFinite || request.quantity <= 0) {
       return const ManualOrderSubmissionResult(
         accepted: false,
         message: 'Quantity must be greater than 0.',
@@ -450,7 +682,7 @@ class TradingEngine {
       case ManualOrderType.limit:
       case ManualOrderType.postOnly:
         final targetPrice = request.price;
-        if (targetPrice == null || targetPrice <= 0) {
+        if (targetPrice == null || !targetPrice.isFinite || targetPrice <= 0) {
           return ManualOrderSubmissionResult(
             accepted: false,
             message: '${request.orderType.label} orders need a valid price.',
@@ -503,6 +735,8 @@ class TradingEngine {
         final endPrice = request.scaleEndPrice;
         if (startPrice == null ||
             endPrice == null ||
+            !startPrice.isFinite ||
+            !endPrice.isFinite ||
             startPrice <= 0 ||
             endPrice <= 0) {
           return const ManualOrderSubmissionResult(
@@ -565,21 +799,690 @@ class TradingEngine {
     }
   }
 
+  Future<String?> _ensureLiveManualRoutingReady() async {
+    if (!_isExchangeSyncMode) {
+      return null;
+    }
+
+    if (_binanceAccountStatus.state != BinanceAccountState.active) {
+      await _syncExchangeState(logSuccess: true);
+    }
+
+    if (_binanceAccountStatus.state == BinanceAccountState.active) {
+      if (_futuresPositionMode == BinanceFuturesPositionMode.hedge) {
+        return 'Live execution is blocked in Hedge Mode because this app currently manages one position per symbol. Switch Binance Futures to One-way Mode after closing all positions and orders.';
+      }
+      if (_futuresPositionMode != BinanceFuturesPositionMode.oneWay) {
+        return 'Live execution is blocked until Binance confirms One-way Position Mode. Refresh the account connection before placing an order.';
+      }
+      if (!apiService.allowOrderMutations) {
+        return 'Live order mutations are blocked in this environment. Use the desktop app or Binance demo mode.';
+      }
+      return null;
+    }
+
+    return switch (_binanceAccountStatus.state) {
+      BinanceAccountState.notConfigured =>
+        'Binance API credentials are not configured for live manual orders.',
+      BinanceAccountState.checking =>
+        'Binance is still checking the account connection. Wait a few seconds and try again.',
+      BinanceAccountState.limited =>
+        _binanceAccountStatus.message ??
+            'Binance is connected in read-only mode. Enable Futures trading permissions before sending manual orders.',
+      BinanceAccountState.attentionRequired =>
+        _binanceAccountStatus.message ??
+            'Binance connection needs attention before sending manual orders.',
+      BinanceAccountState.active => null,
+    };
+  }
+
+  Future<ManualOrderSubmissionResult> _submitLiveManualOrder(
+    ManualOrderRequest request,
+  ) async {
+    if (!request.quantity.isFinite || request.quantity <= 0) {
+      return const ManualOrderSubmissionResult(
+        accepted: false,
+        message: 'Quantity must be greater than 0.',
+      );
+    }
+
+    if (request.action.isCloseAction && !_hasMatchingPosition(request.action)) {
+      return ManualOrderSubmissionResult(
+        accepted: false,
+        message:
+            'No matching ${request.action.label.toLowerCase()} position is open.',
+      );
+    }
+
+    if (request.action.isOpenAction && _openPosition != null) {
+      return const ManualOrderSubmissionResult(
+        accepted: false,
+        message:
+            'A position is already open for this symbol. Close it before starting a new one-click or manual entry.',
+      );
+    }
+    if (request.action.isOpenAction && _ownedEntryOrders.isNotEmpty) {
+      return ManualOrderSubmissionResult(
+        accepted: false,
+        message:
+            'An iFutures entry order is already working for $symbol. Cancel or fill it before placing another entry.',
+      );
+    }
+    if (request.action.isOpenAction) {
+      final ambiguityMessage = await _ambiguousEntryBlockMessage();
+      if (ambiguityMessage != null) {
+        return ManualOrderSubmissionResult(
+          accepted: false,
+          message: ambiguityMessage,
+        );
+      }
+      if (_hasOwnedEntryIntent) {
+        return const ManualOrderSubmissionResult(
+          accepted: false,
+          message:
+              'A previous iFutures entry is still reconciling with Binance. Wait for account sync before submitting another entry.',
+        );
+      }
+    }
+
+    if (request.action.isOpenAction) {
+      final referencePrice =
+          request.price ??
+          _orderBookSnapshot?.midPrice ??
+          (_klines.isNotEmpty ? _klines.last.close : null);
+      final riskError = referencePrice == null
+          ? 'A current market price is required before opening live exposure.'
+          : _validateEntryRisk(
+              quantity: request.quantity,
+              entryPrice: referencePrice,
+            );
+      if (riskError != null) {
+        return ManualOrderSubmissionResult(accepted: false, message: riskError);
+      }
+    }
+
+    try {
+      takeManualControl();
+      _clearLocalPendingOrders();
+
+      if (request.action.isOpenAction) {
+        await apiService.setLeverage(
+          symbol: symbol,
+          leverage: riskSettings.leverage,
+        );
+      }
+
+      switch (request.orderType) {
+        case ManualOrderType.market:
+          await _submitExchangeOrder(
+            request.action,
+            quantity: request.quantity,
+            orderType: request.orderType,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 600));
+          await _syncExchangeState(logSuccess: true);
+          _syncLiveRiskTargets(replaceExisting: request.action.isOpenAction);
+          if (request.action.isOpenAction &&
+              !await _ensureLiveStopProtectionOrFlatten()) {
+            return const ManualOrderSubmissionResult(
+              accepted: false,
+              message:
+                  'The entry was flattened because Binance stop protection could not be confirmed.',
+            );
+          }
+          return ManualOrderSubmissionResult(
+            accepted: true,
+            message:
+                '${request.action.label} market order sent to Binance ${apiService.isTestnet ? 'demo' : 'live'} futures.',
+            executedOrders: 1,
+          );
+        case ManualOrderType.limit:
+        case ManualOrderType.postOnly:
+          final targetPrice = request.price;
+          if (targetPrice == null ||
+              !targetPrice.isFinite ||
+              targetPrice <= 0) {
+            return ManualOrderSubmissionResult(
+              accepted: false,
+              message: '${request.orderType.label} orders need a valid price.',
+            );
+          }
+
+          await _submitExchangeOrder(
+            request.action,
+            quantity: request.quantity,
+            orderType: request.orderType,
+            price: targetPrice,
+          );
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          await _syncExchangeState(logSuccess: true);
+          _syncLiveRiskTargets(replaceExisting: request.action.isOpenAction);
+          if (request.action.isOpenAction &&
+              !await _ensureLiveStopProtectionOrFlatten()) {
+            return const ManualOrderSubmissionResult(
+              accepted: false,
+              message:
+                  'Any filled entry was flattened because Binance stop protection could not be confirmed.',
+            );
+          }
+          return ManualOrderSubmissionResult(
+            accepted: true,
+            message:
+                '${request.action.label} ${request.orderType.label.toLowerCase()} order submitted to Binance.',
+            queuedOrders: 1,
+          );
+        case ManualOrderType.scaled:
+          final startPrice = request.price;
+          final endPrice = request.scaleEndPrice;
+          if (startPrice == null ||
+              endPrice == null ||
+              !startPrice.isFinite ||
+              !endPrice.isFinite ||
+              startPrice <= 0 ||
+              endPrice <= 0) {
+            return const ManualOrderSubmissionResult(
+              accepted: false,
+              message: 'Scaled orders need a valid start and end price.',
+            );
+          }
+          if (request.scaleSteps < 2) {
+            return const ManualOrderSubmissionResult(
+              accepted: false,
+              message: 'Scaled orders need at least 2 steps.',
+            );
+          }
+
+          final prices = _buildScaleTargets(
+            startPrice,
+            endPrice,
+            request.scaleSteps,
+          );
+          final childQuantity = request.quantity / request.scaleSteps;
+
+          for (final targetPrice in prices) {
+            await _submitExchangeOrder(
+              request.action,
+              quantity: childQuantity,
+              orderType: ManualOrderType.scaled,
+              price: targetPrice,
+            );
+          }
+
+          await Future<void>.delayed(const Duration(milliseconds: 500));
+          await _syncExchangeState(logSuccess: true);
+          _syncLiveRiskTargets(replaceExisting: request.action.isOpenAction);
+          if (request.action.isOpenAction &&
+              !await _ensureLiveStopProtectionOrFlatten()) {
+            return const ManualOrderSubmissionResult(
+              accepted: false,
+              message:
+                  'Any filled scaled entry was flattened because Binance stop protection could not be confirmed.',
+            );
+          }
+          return ManualOrderSubmissionResult(
+            accepted: true,
+            message:
+                '${request.action.label} scaled ladder submitted to Binance with ${request.scaleSteps} working orders.',
+            queuedOrders: request.scaleSteps,
+          );
+      }
+    } on BinanceRequestOutcomeUnknownException catch (error) {
+      await _syncExchangeState();
+      final clientId = error.clientOrderId ?? 'unknown';
+      final message =
+          'Binance did not confirm the final outcome for client order $clientId. Do not submit it again. Check Binance positions and working orders; the app will keep reconciling.';
+      _logExecutionBlocked(message);
+      return ManualOrderSubmissionResult(accepted: false, message: message);
+    } on BinanceApiException catch (error) {
+      final message =
+          error.errorMessage ??
+          'Binance rejected the manual order request (${error.statusCode}).';
+      _logExecutionBlocked('Live manual order rejected: $message');
+      return ManualOrderSubmissionResult(accepted: false, message: message);
+    } catch (error) {
+      final message = 'Live manual order failed: $error';
+      _logExecutionBlocked(message);
+      return ManualOrderSubmissionResult(accepted: false, message: message);
+    }
+  }
+
+  Future<void> _submitExchangeOrder(
+    ManualOrderAction action, {
+    required double quantity,
+    required ManualOrderType orderType,
+    double? price,
+    int retryCount = 0,
+  }) async {
+    if (!quantity.isFinite || quantity <= 0) {
+      throw StateError('Quantity must be a finite value greater than 0.');
+    }
+    if (price != null && (!price.isFinite || price <= 0)) {
+      throw StateError('Price must be a finite value greater than 0.');
+    }
+    final rules = await apiService.getSymbolRules(symbol);
+    if (rules == null) {
+      throw StateError(
+        '$symbol is not listed in the selected Binance Futures environment.',
+      );
+    }
+    if (!rules.isTradablePerpetual) {
+      throw StateError(
+        '$symbol is not an active Binance USD-M perpetual contract (status ${rules.status}, type ${rules.contractType}).',
+      );
+    }
+    final isMarket = orderType == ManualOrderType.market;
+    final normalizedQuantity = rules.normalizeQuantity(
+      quantity,
+      market: isMarket,
+    );
+    if (normalizedQuantity == null ||
+        normalizedQuantity <= 0 ||
+        rules.normalizeQuantity(quantity, market: isMarket) == null) {
+      throw StateError(
+        'Quantity is below Binance minimum size for $symbol. Increase the order size.',
+      );
+    }
+
+    final normalizedPrice = price == null
+        ? null
+        : (rules.normalizePrice(price) ?? price);
+    if (price != null && (normalizedPrice == null || normalizedPrice <= 0)) {
+      throw StateError(
+        'Price is below Binance minimum price increment for $symbol.',
+      );
+    }
+
+    final referencePrice =
+        normalizedPrice ??
+        _orderBookSnapshot?.midPrice ??
+        (_klines.isNotEmpty ? _klines.last.close : null);
+    final minimumQuantity = referencePrice == null
+        ? null
+        : rules.minimumQuantityForPrice(referencePrice);
+    final referenceNotionalPrice = referencePrice;
+    if (minimumQuantity != null &&
+        referenceNotionalPrice != null &&
+        normalizedQuantity < minimumQuantity) {
+      final minimumNotional = minimumQuantity * referenceNotionalPrice;
+      throw StateError(
+        'Quantity is below Binance minimum tradable size for $symbol. Need at least ${_formatQuantity(minimumQuantity)} ${symbol.toUpperCase()} (about ${_formatUsdt(minimumNotional)} notional).',
+      );
+    }
+
+    final side = switch (action) {
+      ManualOrderAction.openLong || ManualOrderAction.closeShort => 'BUY',
+      ManualOrderAction.openShort || ManualOrderAction.closeLong => 'SELL',
+    };
+    final type = orderType == ManualOrderType.market ? 'MARKET' : 'LIMIT';
+    final positionSide = _exchangePositionSideForAction(action);
+    final reduceOnly = _exchangeReduceOnlyForAction(action);
+    final timeInForce = switch (orderType) {
+      ManualOrderType.market => null,
+      ManualOrderType.limit || ManualOrderType.scaled => 'GTC',
+      ManualOrderType.postOnly => 'GTX',
+    };
+
+    final clientOrderId = _nextClientOrderId(
+      action.isOpenAction ? 'entry' : 'exit',
+    );
+    try {
+      late final Map<String, dynamic> response;
+      try {
+        response = await apiService.placeOrder(
+          symbol: symbol,
+          side: side,
+          type: type,
+          quantity: rules.formatQuantity(normalizedQuantity, market: isMarket),
+          price: normalizedPrice == null
+              ? null
+              : rules.formatPrice(normalizedPrice),
+          timeInForce: timeInForce,
+          positionSide: positionSide,
+          reduceOnly: reduceOnly,
+          newOrderRespType: orderType == ManualOrderType.market
+              ? 'RESULT'
+              : 'ACK',
+          newClientOrderId: clientOrderId,
+        );
+      } on BinanceRequestOutcomeUnknownException {
+        final reconciled = await _reconcileUnknownNormalOrder(clientOrderId);
+        if (reconciled == null) {
+          if (action.isOpenAction) {
+            _quarantineAmbiguousEntryIntent(clientOrderId);
+          }
+          rethrow;
+        }
+        response = reconciled;
+        _logConsole(
+          'Recovered an uncertain Binance response by finding client order $clientOrderId. No duplicate order was sent.',
+          level: StrategyConsoleLevel.warning,
+        );
+      }
+
+      if (action.isOpenAction) {
+        _trackEntryIntent(
+          clientOrderId,
+          orderId: response['orderId']?.toString(),
+        );
+        _hasOwnedEntryIntent = true;
+        _ownsActivePosition = true;
+      }
+
+      final orderId = response['orderId'];
+      _logConsole(
+        'Submitted live ${orderType.label.toLowerCase()} ${action.label.toLowerCase()} order to Binance${orderId == null ? '' : ' (#$orderId)'} using ${_futuresPositionModeLabel.toLowerCase()} mode${positionSide == null ? '' : ' [$positionSide]'}.',
+        level: StrategyConsoleLevel.success,
+      );
+    } on BinanceApiException catch (error) {
+      if (retryCount == 0 && _isPositionModeMismatch(error)) {
+        final previousMode = _futuresPositionMode;
+        await _refreshFuturesPositionMode(logChange: true);
+        if (_futuresPositionMode != previousMode) {
+          _logConsole(
+            'Retrying Binance order after refreshing futures mode to ${_futuresPositionModeLabel}.',
+            level: StrategyConsoleLevel.warning,
+          );
+        }
+        return _submitExchangeOrder(
+          action,
+          quantity: quantity,
+          orderType: orderType,
+          price: price,
+          retryCount: retryCount + 1,
+        );
+      }
+      rethrow;
+    }
+  }
+
+  String get _futuresPositionModeLabel => switch (_futuresPositionMode) {
+    BinanceFuturesPositionMode.oneWay => 'One-way',
+    BinanceFuturesPositionMode.hedge => 'Hedge',
+    BinanceFuturesPositionMode.unknown => 'Unknown',
+  };
+
+  String? _exchangePositionSideForAction(ManualOrderAction action) {
+    return switch (_futuresPositionMode) {
+      BinanceFuturesPositionMode.oneWay => null,
+      BinanceFuturesPositionMode.hedge =>
+        action.positionSide == PositionSide.long ? 'LONG' : 'SHORT',
+      BinanceFuturesPositionMode.unknown => throw StateError(
+        'Binance Futures position mode is unknown; order routing is blocked.',
+      ),
+    };
+  }
+
+  bool? _exchangeReduceOnlyForAction(ManualOrderAction action) {
+    if (!action.isCloseAction) {
+      return null;
+    }
+    return switch (_futuresPositionMode) {
+      BinanceFuturesPositionMode.oneWay => true,
+      BinanceFuturesPositionMode.hedge => null,
+      BinanceFuturesPositionMode.unknown => throw StateError(
+        'Binance Futures position mode is unknown; reduce-only routing is blocked.',
+      ),
+    };
+  }
+
+  Future<Map<String, dynamic>?> _reconcileUnknownNormalOrder(
+    String clientOrderId,
+  ) async {
+    const delays = <Duration>[
+      Duration.zero,
+      Duration(milliseconds: 400),
+      Duration(milliseconds: 900),
+    ];
+    for (final delay in delays) {
+      if (delay > Duration.zero) {
+        await Future<void>.delayed(delay);
+      }
+      try {
+        return await apiService.getOrderByClientOrderId(
+          symbol: symbol,
+          origClientOrderId: clientOrderId,
+        );
+      } on BinanceApiException catch (error) {
+        if (error.errorCode != -2013) {
+          return null;
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  void _quarantineAmbiguousEntryIntent(String clientOrderId) {
+    _trackEntryIntent(clientOrderId);
+    _hasOwnedEntryIntent = true;
+    _logExecutionBlocked(
+      'Entry intent $clientOrderId is quarantined until Binance proves whether it exists. New entries are blocked.',
+    );
+  }
+
+  void _trackEntryIntent(String clientOrderId, {String? orderId}) {
+    final intent = _ambiguousEntryIntents.putIfAbsent(
+      clientOrderId,
+      () => _AmbiguousEntryIntent(
+        clientOrderId: clientOrderId,
+        createdAt: DateTime.now(),
+      ),
+    );
+    if (orderId != null && orderId.isNotEmpty) {
+      intent.orderId = orderId;
+    }
+  }
+
+  Future<String?> _ambiguousEntryBlockMessage() async {
+    if (_ambiguousEntryIntents.isEmpty) {
+      return null;
+    }
+    await _reconcileAmbiguousEntryIntents();
+    if (_ambiguousEntryIntents.isEmpty) {
+      return null;
+    }
+    final ids = _ambiguousEntryIntents.keys.join(', ');
+    return 'A previous Binance entry is still working or unresolved ($ids). New entries remain blocked until reconciliation completes.';
+  }
+
+  Future<void> _reconcileAmbiguousEntryIntents({
+    bool accountSnapshotIsCurrent = false,
+  }) async {
+    if (_ambiguousEntryIntents.isEmpty || !apiService.hasCredentials) {
+      return;
+    }
+
+    for (final intent in List<_AmbiguousEntryIntent>.of(
+      _ambiguousEntryIntents.values,
+    )) {
+      try {
+        final payload = await apiService.getOrderByClientOrderId(
+          symbol: symbol,
+          origClientOrderId: intent.clientOrderId,
+        );
+        final status = '${payload['status'] ?? ''}'.trim().toUpperCase();
+        final orderId = payload['orderId']?.toString();
+        if (orderId != null && orderId.isNotEmpty) {
+          intent.orderId = orderId;
+        }
+        intent.notFoundConfirmations = 0;
+        final executedQuantity =
+            _asDouble(payload['executedQty'] ?? payload['cumQty']) ?? 0;
+        if (executedQuantity > intent.executedQuantity) {
+          intent.executedQuantity = executedQuantity;
+        }
+        final isWorking =
+            status.isEmpty ||
+            status == 'NEW' ||
+            status == 'PENDING_NEW' ||
+            status == 'PARTIALLY_FILLED';
+        final isTerminal =
+            status == 'FILLED' ||
+            status == 'CANCELED' ||
+            status == 'CANCELLED' ||
+            status == 'REJECTED' ||
+            status == 'EXPIRED' ||
+            status == 'EXPIRED_IN_MATCH';
+        final hasExecution = intent.executedQuantity > 0 || status == 'FILLED';
+        final statusChanged = intent.lastStatus != status;
+        intent.lastStatus = status;
+
+        if (isWorking) {
+          _hasOwnedEntryIntent = true;
+          if (_openPosition != null) {
+            _ownsActivePosition = true;
+          }
+          if (statusChanged) {
+            _logConsole(
+              'Tracked Binance entry ${intent.clientOrderId} is ${status.isEmpty ? 'not fully acknowledged yet' : status}. New entries remain blocked.',
+              level: StrategyConsoleLevel.warning,
+            );
+          }
+          continue;
+        }
+
+        if (hasExecution) {
+          _hasOwnedEntryIntent = true;
+          if (_openPosition != null) {
+            _ownsActivePosition = true;
+            if (isTerminal) {
+              _ambiguousEntryIntents.remove(intent.clientOrderId);
+            }
+            continue;
+          }
+
+          if (isTerminal && accountSnapshotIsCurrent) {
+            intent.flatAfterExecutionConfirmations += 1;
+            final oldEnough =
+                DateTime.now().difference(intent.createdAt) >=
+                ambiguousEntryMinimumQuarantine;
+            final requiredConfirmations =
+                ambiguousEntryNotFoundConfirmations < 1
+                ? 1
+                : ambiguousEntryNotFoundConfirmations;
+            if (oldEnough &&
+                intent.flatAfterExecutionConfirmations >=
+                    requiredConfirmations) {
+              _ambiguousEntryIntents.remove(intent.clientOrderId);
+              _clearOwnedEntryIntentIfSafe();
+              _logConsole(
+                'Binance entry ${intent.clientOrderId} executed but repeated current account snapshots are flat; its intent lock was cleared.',
+                level: StrategyConsoleLevel.warning,
+              );
+            }
+          }
+          continue;
+        }
+
+        if (isTerminal) {
+          _ambiguousEntryIntents.remove(intent.clientOrderId);
+          _clearOwnedEntryIntentIfSafe();
+          _logConsole(
+            'Binance confirmed entry ${intent.clientOrderId} is $status with no execution. New entries may resume after account sync.',
+            level: StrategyConsoleLevel.warning,
+          );
+        }
+      } on BinanceApiException catch (error) {
+        if (error.errorCode != -2013) {
+          continue;
+        }
+        intent.notFoundConfirmations += 1;
+        final oldEnough =
+            DateTime.now().difference(intent.createdAt) >=
+            ambiguousEntryMinimumQuarantine;
+        final requiredConfirmations = ambiguousEntryNotFoundConfirmations < 1
+            ? 1
+            : ambiguousEntryNotFoundConfirmations;
+        final appearsInSnapshot = _openOrders.any(
+          (order) =>
+              order.clientOrderId == intent.clientOrderId ||
+              (intent.orderId != null && order.orderId == intent.orderId),
+        );
+        if (accountSnapshotIsCurrent &&
+            oldEnough &&
+            intent.notFoundConfirmations >= requiredConfirmations &&
+            !appearsInSnapshot &&
+            _openPosition == null) {
+          _ambiguousEntryIntents.remove(intent.clientOrderId);
+          _clearOwnedEntryIntentIfSafe();
+          _logConsole(
+            'Binance repeatedly confirmed that quarantined entry ${intent.clientOrderId} does not exist; the entry quarantine was cleared.',
+            level: StrategyConsoleLevel.warning,
+          );
+        }
+      } catch (_) {
+        // Transport/read failures are not proof that an ambiguous entry is absent.
+      }
+    }
+  }
+
+  void _clearOwnedEntryIntentIfSafe() {
+    if (_ambiguousEntryIntents.isEmpty &&
+        _openPosition == null &&
+        _ownedEntryOrders.isEmpty) {
+      _hasOwnedEntryIntent = false;
+    }
+  }
+
+  bool _isPositionModeMismatch(BinanceApiException error) {
+    final message = '${error.errorMessage ?? error.body}'.toLowerCase();
+    return error.errorCode == -4061 ||
+        message.contains("position side does not match user's setting");
+  }
+
+  void _clearLocalPendingOrders() {
+    if (_pendingManualOrders.isEmpty) {
+      return;
+    }
+    _pendingManualOrders.clear();
+    _emitPendingOrders();
+  }
+
   Future<void> _ensureMarketData() async {
     if (!_isStreaming) {
       await startMarketData();
     }
   }
 
-  void _handleSignalWithReason(
+  Future<void> _handleSignalWithReason(
     PositionSide desiredSide,
     String reason, {
     StrategyTradePlan? plan,
-  }) {
-    if (_isExchangeSyncMode) {
+  }) async {
+    final protectionMessage = _activeProtectionMessage();
+    if (reason == 'strategy' && protectionMessage != null) {
       _logExecutionBlocked(
-        '${strategy.name} signaled ${desiredSide == PositionSide.long ? 'LONG' : 'SHORT'}, but live order routing is not enabled. Waiting for actual Binance account changes instead of simulating a local trade.',
+        'Protection engine is active: $protectionMessage New auto entries and reversals are paused.',
       );
+      return;
+    }
+
+    final confidence = plan?.confidence;
+    if (reason == 'strategy' &&
+        confidence != null &&
+        (!confidence.isFinite || confidence < 0.60)) {
+      _logExecutionBlocked(
+        '${strategy.name} confidence is ${(confidence.isFinite ? confidence * 100 : 0).toStringAsFixed(0)}%, below the 60% auto-execution floor. The plan remains visible for review.',
+      );
+      return;
+    }
+
+    if (_isExchangeSyncMode) {
+      final blockMessage = await _ensureLiveStrategyRoutingReady();
+      if (blockMessage != null) {
+        _logExecutionBlocked(blockMessage);
+        return;
+      }
+      if (plan == null || !plan.isActionable) {
+        _logExecutionBlocked(
+          plan == null
+              ? '${strategy.name} is connected to Binance, but no live plan is available yet.'
+              : '${strategy.name} is waiting: ${plan.rationale}',
+        );
+        return;
+      }
+      await _submitLiveStrategyPlan(desiredSide, plan: plan);
       return;
     }
 
@@ -589,30 +1492,12 @@ class TradingEngine {
     }
 
     final currentPrice = _klines.last.close;
-    final protectionMessage = _activeProtectionMessage();
-    if (reason == 'strategy' && protectionMessage != null) {
-      if (_openPosition != null && _openPosition!.side != desiredSide) {
-        _logExecutionBlocked(
-          'Protection engine is active: $protectionMessage Closing the current position without opening a reversal.',
-        );
-        _closePosition(
-          currentPrice,
-          'protection_flatten',
-          orderType: plan?.orderType,
-          requestedPrice: plan?.targetEntryPrice,
-        );
-        return;
-      }
+    final quantity =
+        plan?.quantity ??
+        riskSettings.resolveQuantity(currentPrice) ??
+        riskSettings.tradeQuantity;
 
-      _logExecutionBlocked(
-        'Protection engine is active: $protectionMessage New auto entries are paused.',
-      );
-      return;
-    }
-
-    final quantity = riskSettings.tradeQuantity;
-
-    if (quantity <= 0) {
+    if (!quantity.isFinite || quantity <= 0) {
       print('Trade quantity must be greater than zero');
       return;
     }
@@ -625,6 +1510,7 @@ class TradingEngine {
         quantity: quantity,
         entryTime: DateTime.now(),
       );
+      _applyPlanRiskTargets(plan, _openPosition);
       _positionController.add(_openPosition);
       _recordEntryTrade(
         desiredSide,
@@ -638,6 +1524,7 @@ class TradingEngine {
     }
 
     if (_openPosition!.side == desiredSide) {
+      _applyPlanRiskTargets(plan, _openPosition);
       return;
     }
 
@@ -655,6 +1542,7 @@ class TradingEngine {
       quantity: quantity,
       entryTime: DateTime.now(),
     );
+    _applyPlanRiskTargets(plan, _openPosition);
     _positionController.add(_openPosition);
     _recordEntryTrade(
       desiredSide,
@@ -664,6 +1552,383 @@ class TradingEngine {
       orderType: plan?.orderType,
       requestedPrice: plan?.targetEntryPrice,
     );
+  }
+
+  Future<String?> _ensureLiveStrategyRoutingReady() async {
+    if (!_isExchangeSyncMode) {
+      return null;
+    }
+
+    if (_binanceAccountStatus.state != BinanceAccountState.active) {
+      await _syncExchangeState(logSuccess: true);
+    }
+
+    if (_binanceAccountStatus.state == BinanceAccountState.active) {
+      if (_futuresPositionMode == BinanceFuturesPositionMode.hedge) {
+        return 'Auto execution is blocked in Hedge Mode because this app currently manages one position per symbol. Switch Binance Futures to One-way Mode after closing all positions and orders.';
+      }
+      if (_futuresPositionMode != BinanceFuturesPositionMode.oneWay) {
+        return 'Auto execution is blocked until Binance confirms One-way Position Mode. Refresh the account connection before arming the bot.';
+      }
+      if (!apiService.allowOrderMutations) {
+        return 'Live auto execution is blocked in this environment. Use the desktop app or Binance demo mode.';
+      }
+      return null;
+    }
+
+    return switch (_binanceAccountStatus.state) {
+      BinanceAccountState.notConfigured =>
+        'Binance API credentials are not configured for auto trading.',
+      BinanceAccountState.checking =>
+        'Binance is still checking the account connection. Auto execution is waiting.',
+      BinanceAccountState.limited =>
+        _binanceAccountStatus.message ??
+            'Binance is connected in read-only mode. Auto trading needs Futures permissions.',
+      BinanceAccountState.attentionRequired =>
+        _binanceAccountStatus.message ??
+            'Binance connection needs attention before AI or ALGO can place orders.',
+      BinanceAccountState.active => null,
+    };
+  }
+
+  Future<void> _submitLiveStrategyPlan(
+    PositionSide desiredSide, {
+    required StrategyTradePlan plan,
+  }) async {
+    if (!_beginOrderSubmission(mayOpenExposure: true)) {
+      _logExecutionBlocked(
+        'Auto execution is waiting for the previous order submission to finish.',
+      );
+      return;
+    }
+    try {
+      await _submitLiveStrategyPlanUnlocked(desiredSide, plan: plan);
+    } finally {
+      _finishOrderSubmission();
+    }
+  }
+
+  Future<void> _submitLiveStrategyPlanUnlocked(
+    PositionSide desiredSide, {
+    required StrategyTradePlan plan,
+  }) async {
+    final executionGeneration = _executionGeneration;
+    final quantity = await _resolveLiveStrategyQuantity(plan);
+    if (quantity <= 0) {
+      _logExecutionBlocked(
+        '${strategy.name} generated a ${plan.orderTypeLabel} ${plan.actionLabel} plan, but quantity is 0.',
+      );
+      return;
+    }
+    final ambiguityMessage = await _ambiguousEntryBlockMessage();
+    if (ambiguityMessage != null) {
+      _logExecutionBlocked(ambiguityMessage);
+      return;
+    }
+    if (_hasOwnedEntryIntent &&
+        _openPosition == null &&
+        _ownedEntryOrders.isEmpty) {
+      _logExecutionBlocked(
+        'Auto execution is waiting for the previous iFutures entry to finish account reconciliation.',
+      );
+      return;
+    }
+    final riskError = _validateEntryRisk(
+      quantity: quantity,
+      entryPrice: plan.targetEntryPrice ?? plan.currentPrice,
+      fallbackStopLossPercent: plan.stopLossPercent,
+      leverageOverride: plan.leverage,
+    );
+    if (riskError != null) {
+      _logExecutionBlocked(riskError);
+      return;
+    }
+
+    final fingerprint = _buildLiveStrategyFingerprint(
+      desiredSide,
+      plan,
+      quantity,
+    );
+    if (_lastLiveStrategyFingerprint == fingerprint) {
+      return;
+    }
+
+    if (_ownedEntryOrders.isNotEmpty) {
+      _lastLiveStrategyFingerprint = fingerprint;
+      _logExecutionBlocked(
+        '${strategy.name} did not add another entry because an iFutures order is already working for $symbol.',
+      );
+      return;
+    }
+
+    if (_openPosition != null && _openPosition!.side == desiredSide) {
+      _lastLiveStrategyFingerprint = fingerprint;
+      _logConsole(
+        '${strategy.name} kept the current ${desiredSide == PositionSide.long ? 'LONG' : 'SHORT'} open. Execution style remains ${plan.orderTypeLabel}.',
+      );
+      return;
+    }
+
+    if (!_isAutoExecutionCurrent(executionGeneration)) {
+      return;
+    }
+
+    _lastLiveStrategyFingerprint = fingerprint;
+    try {
+      if (_openPosition != null && _openPosition!.side != desiredSide) {
+        if (!_ownsActivePosition) {
+          _logExecutionBlocked(
+            '${strategy.name} will not reverse or close the existing Binance position because it is not owned by this iFutures installation.',
+          );
+          return;
+        }
+        if (!_isAutoExecutionCurrent(executionGeneration)) {
+          return;
+        }
+        final closeAction = _openPosition!.isLong
+            ? ManualOrderAction.closeLong
+            : ManualOrderAction.closeShort;
+        await _submitExchangeOrder(
+          closeAction,
+          quantity: _openPosition!.quantity,
+          orderType: ManualOrderType.market,
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        await _syncExchangeState(logSuccess: true);
+        _logConsole(
+          '${strategy.name} flattened the opposite position. A fresh signal is required before opening a reversal.',
+          level: StrategyConsoleLevel.warning,
+        );
+        return;
+      }
+
+      final submitted = desiredSide == PositionSide.long
+          ? await _submitExchangePlanOrder(
+              ManualOrderAction.openLong,
+              quantity: quantity,
+              plan: plan,
+              executionGeneration: executionGeneration,
+            )
+          : await _submitExchangePlanOrder(
+              ManualOrderAction.openShort,
+              quantity: quantity,
+              plan: plan,
+              executionGeneration: executionGeneration,
+            );
+      if (!submitted || !_isAutoExecutionCurrent(executionGeneration)) {
+        await _syncExchangeState();
+        await cancelBotEntryOrders(reason: 'auto execution was stopped');
+        return;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await _syncExchangeState(logSuccess: true);
+      _syncLiveRiskTargets(plan: plan, replaceExisting: true);
+      if (!await _ensureLiveStopProtectionOrFlatten()) {
+        _logExecutionBlocked(
+          '${strategy.name} entry was flattened because stop protection could not be confirmed.',
+        );
+        return;
+      }
+      _logConsole(
+        '${strategy.name} sent ${plan.orderTypeLabel.toLowerCase()} ${plan.actionLabel.toLowerCase()} to Binance for ${_formatQuantity(quantity)} ${symbol.toUpperCase()}.',
+        level: StrategyConsoleLevel.success,
+      );
+    } on BinanceRequestOutcomeUnknownException catch (error) {
+      await _syncExchangeState();
+      final clientId = error.clientOrderId ?? 'unknown';
+      _logExecutionBlocked(
+        'Binance did not confirm auto order $clientId. No retry will be sent; account reconciliation remains active.',
+      );
+    } on BinanceApiException catch (error) {
+      _lastLiveStrategyFingerprint = null;
+      final message =
+          error.errorMessage ??
+          'Binance rejected the ${plan.orderTypeLabel.toLowerCase()} ${plan.actionLabel.toLowerCase()} request.';
+      _logExecutionBlocked(message);
+    } catch (error) {
+      _lastLiveStrategyFingerprint = null;
+      _logExecutionBlocked('Auto execution failed: $error');
+    }
+  }
+
+  bool _isAutoExecutionCurrent(int generation) =>
+      _isAutoTradingEnabled && generation == _executionGeneration;
+
+  Future<double> _resolveLiveStrategyQuantity(StrategyTradePlan plan) async {
+    final requestedQuantity =
+        plan.quantity ??
+        riskSettings.resolveQuantity(
+          plan.targetEntryPrice ?? plan.currentPrice,
+        ) ??
+        riskSettings.tradeQuantity;
+    if (!requestedQuantity.isFinite || requestedQuantity <= 0) {
+      return requestedQuantity;
+    }
+
+    final entryPrice = plan.targetEntryPrice ?? plan.currentPrice;
+    if (!entryPrice.isFinite || entryPrice <= 0) {
+      return requestedQuantity;
+    }
+
+    final rules = await apiService.getSymbolRules(symbol);
+    final minimumQuantity = rules?.minimumQuantityForPrice(entryPrice);
+    if (minimumQuantity == null || requestedQuantity >= minimumQuantity) {
+      return requestedQuantity;
+    }
+
+    final requiredNotional = minimumQuantity * entryPrice;
+    final leverage = plan.leverage <= 0 ? 1 : plan.leverage;
+    final requiredMargin = requiredNotional / leverage;
+    if (_availableBalance != null &&
+        requiredMargin > (_availableBalance! + 0.0000001)) {
+      throw StateError(
+        'Configured size is too small for Binance and the minimum tradable order for $symbol needs about ${_formatUsdt(requiredMargin)} margin at ${leverage}x leverage.',
+      );
+    }
+
+    _logConsole(
+      'Raised auto size from ${_formatQuantity(requestedQuantity)} to Binance minimum ${_formatQuantity(minimumQuantity)} ${symbol.toUpperCase()} so the order can actually be accepted.',
+      level: StrategyConsoleLevel.warning,
+    );
+    return minimumQuantity;
+  }
+
+  String? _validateEntryRisk({
+    required double quantity,
+    required double entryPrice,
+    double? fallbackStopLossPercent,
+    int? leverageOverride,
+  }) {
+    if (!quantity.isFinite ||
+        !entryPrice.isFinite ||
+        quantity <= 0 ||
+        entryPrice <= 0) {
+      return 'Live entry needs a valid quantity and reference price.';
+    }
+    final stopLossPercent = riskSettings.resolveStopLossPercent(
+      entryPrice,
+      quantity: quantity,
+      fallbackPercent: fallbackStopLossPercent,
+    );
+    if (!stopLossPercent.isFinite || stopLossPercent <= 0) {
+      return 'Live entries require a stop loss. Configure a percentage or estimated USDT max-loss guard first.';
+    }
+    final leverage = leverageOverride ?? riskSettings.leverage;
+    if (leverage < 1 || leverage > 125) {
+      return 'Live entry leverage must be between 1x and 125x.';
+    }
+    final conservativeLimit = 80 / leverage;
+    if (stopLossPercent >= conservativeLimit) {
+      return 'The configured stop is ${stopLossPercent.toStringAsFixed(2)}% from entry, too close to the estimated liquidation zone at ${leverage}x. Reduce max loss, increase notional, or lower leverage.';
+    }
+    return null;
+  }
+
+  Future<bool> _submitExchangePlanOrder(
+    ManualOrderAction action, {
+    required double quantity,
+    required StrategyTradePlan plan,
+    required int executionGeneration,
+  }) async {
+    if (!_isAutoExecutionCurrent(executionGeneration)) {
+      return false;
+    }
+    final orderType = plan.orderType ?? ManualOrderType.market;
+    final entryPrice = plan.targetEntryPrice ?? plan.currentPrice;
+    if (action.isOpenAction) {
+      await apiService.setLeverage(symbol: symbol, leverage: plan.leverage);
+      if (!_isAutoExecutionCurrent(executionGeneration)) {
+        return false;
+      }
+    }
+
+    switch (orderType) {
+      case ManualOrderType.market:
+        await _submitExchangeOrder(
+          action,
+          quantity: quantity,
+          orderType: orderType,
+        );
+        return true;
+      case ManualOrderType.limit:
+      case ManualOrderType.postOnly:
+        await _submitExchangeOrder(
+          action,
+          quantity: quantity,
+          orderType: orderType,
+          price: entryPrice,
+        );
+        return true;
+      case ManualOrderType.scaled:
+        final prices = _buildScaleTargets(
+          _scaledPlanStartPrice(action, entryPrice),
+          _scaledPlanEndPrice(action, plan, entryPrice),
+          3,
+        );
+        final childQuantity = quantity / prices.length;
+        for (final targetPrice in prices) {
+          if (!_isAutoExecutionCurrent(executionGeneration)) {
+            return false;
+          }
+          await _submitExchangeOrder(
+            action,
+            quantity: childQuantity,
+            orderType: ManualOrderType.scaled,
+            price: targetPrice,
+          );
+        }
+        return true;
+    }
+  }
+
+  String _buildLiveStrategyFingerprint(
+    PositionSide desiredSide,
+    StrategyTradePlan plan,
+    double quantity,
+  ) {
+    final target = plan.targetEntryPrice ?? plan.currentPrice;
+    final currentSide = _openPosition == null
+        ? 'flat'
+        : (_openPosition!.isLong ? 'long' : 'short');
+    return [
+      symbol.toUpperCase(),
+      currentSide,
+      desiredSide.name,
+      plan.orderTypeLabel,
+      _formatExchangeDecimal(target),
+      _formatExchangeDecimal(quantity),
+    ].join('|');
+  }
+
+  double _scaledPlanStartPrice(
+    ManualOrderAction action,
+    double referencePrice,
+  ) {
+    const spanPercent = 0.0015;
+    return switch (action) {
+      ManualOrderAction.openLong ||
+      ManualOrderAction.closeShort => referencePrice * (1 - spanPercent),
+      ManualOrderAction.openShort ||
+      ManualOrderAction.closeLong => referencePrice * (1 + spanPercent),
+    };
+  }
+
+  double _scaledPlanEndPrice(
+    ManualOrderAction action,
+    StrategyTradePlan plan,
+    double referencePrice,
+  ) {
+    final spreadFactor = ((plan.spreadPercent ?? 0.05) / 100).clamp(
+      0.001,
+      0.004,
+    );
+    return switch (action) {
+      ManualOrderAction.openLong ||
+      ManualOrderAction.closeShort => referencePrice * (1 + spreadFactor),
+      ManualOrderAction.openShort ||
+      ManualOrderAction.closeLong => referencePrice * (1 - spreadFactor),
+    };
   }
 
   void _recordEntryTrade(
@@ -766,7 +2031,11 @@ class TradingEngine {
             entryPrice: position.entryPrice,
             quantity: remainingQuantity,
             entryTime: position.entryTime,
+            liquidationPrice: position.liquidationPrice,
           );
+    if (_openPosition == null) {
+      _clearPlanRiskTargets();
+    }
     _positionController.add(_openPosition);
 
     print(
@@ -777,31 +2046,115 @@ class TradingEngine {
   void _checkRisk(double currentPrice) {
     final position = _openPosition;
     if (position == null) return;
+    if (_isExchangeSyncMode && !_ownsActivePosition) {
+      return;
+    }
+    final uncertainUntil = _riskExitUncertainUntil;
+    if (uncertainUntil != null && DateTime.now().isBefore(uncertainUntil)) {
+      return;
+    }
 
-    if (riskSettings.hasStopLoss) {
-      final stopLoss = position.stopLossPrice(riskSettings.stopLossPercent);
+    final stopLoss =
+        _activeStopLossPrice ??
+        (riskSettings.hasStopLoss
+            ? position.stopLossPrice(
+                riskSettings.resolveStopLossPercent(
+                  position.entryPrice,
+                  quantity: position.quantity,
+                ),
+              )
+            : null);
+    if (stopLoss != null) {
       if (position.isLong && currentPrice <= stopLoss) {
-        _closePosition(currentPrice, 'stop_loss');
+        _triggerRiskExit(currentPrice, 'stop_loss');
         return;
       }
       if (!position.isLong && currentPrice >= stopLoss) {
-        _closePosition(currentPrice, 'stop_loss');
+        _triggerRiskExit(currentPrice, 'stop_loss');
         return;
       }
     }
 
-    if (riskSettings.hasTakeProfit) {
-      final takeProfit = position.takeProfitPrice(
-        riskSettings.takeProfitPercent,
-      );
+    final takeProfit =
+        _activeTakeProfitPrice ??
+        (riskSettings.hasTakeProfit
+            ? position.takeProfitPrice(
+                riskSettings.resolveTakeProfitPercent(
+                  position.entryPrice,
+                  quantity: position.quantity,
+                ),
+              )
+            : null);
+    if (takeProfit != null) {
       if (position.isLong && currentPrice >= takeProfit) {
-        _closePosition(currentPrice, 'take_profit');
+        _triggerRiskExit(currentPrice, 'take_profit');
         return;
       }
       if (!position.isLong && currentPrice <= takeProfit) {
-        _closePosition(currentPrice, 'take_profit');
+        _triggerRiskExit(currentPrice, 'take_profit');
         return;
       }
+    }
+  }
+
+  void _triggerRiskExit(double currentPrice, String reason) {
+    if (_isExchangeSyncMode) {
+      unawaited(_closeLivePositionForRisk(currentPrice, reason));
+      return;
+    }
+    _closePosition(currentPrice, reason);
+  }
+
+  Future<void> _closeLivePositionForRisk(
+    double currentPrice,
+    String reason,
+  ) async {
+    if (_isRiskExitInFlight || !_beginOrderSubmission(mayOpenExposure: false)) {
+      return;
+    }
+    _isRiskExitInFlight = true;
+    final position = _openPosition;
+    if (position == null) {
+      _isRiskExitInFlight = false;
+      _finishOrderSubmission();
+      return;
+    }
+
+    final blockMessage = await _ensureLiveStrategyRoutingReady();
+    if (blockMessage != null) {
+      _logExecutionBlocked('Risk exit blocked: $blockMessage');
+      _isRiskExitInFlight = false;
+      _finishOrderSubmission();
+      return;
+    }
+
+    try {
+      final closeAction = position.isLong
+          ? ManualOrderAction.closeLong
+          : ManualOrderAction.closeShort;
+      await _submitExchangeOrder(
+        closeAction,
+        quantity: position.quantity,
+        orderType: ManualOrderType.market,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await _syncExchangeState(logSuccess: true);
+      _clearPlanRiskTargets();
+      _logConsole(
+        'Sent live ${reason.replaceAll('_', ' ')} close to Binance for ${_formatQuantity(position.quantity)} ${symbol.toUpperCase()}.',
+        level: StrategyConsoleLevel.warning,
+      );
+    } on BinanceRequestOutcomeUnknownException catch (error) {
+      _riskExitUncertainUntil = DateTime.now().add(const Duration(seconds: 10));
+      await _syncExchangeState();
+      _logExecutionBlocked(
+        'Risk-exit order ${error.clientOrderId ?? 'unknown'} has an unconfirmed Binance outcome. No duplicate close will be sent for 10 seconds while reconciliation continues.',
+      );
+    } catch (error) {
+      _logExecutionBlocked('Risk exit failed: $error');
+    } finally {
+      _isRiskExitInFlight = false;
+      _finishOrderSubmission();
     }
   }
 
@@ -809,6 +2162,7 @@ class TradingEngine {
     _isStreaming = false;
     _wsSubscription?.cancel();
     _wsSubscription = null;
+    _stopUserDataStream();
     _logConsole('Market stream stopped.', level: StrategyConsoleLevel.warning);
     _stopExchangeSyncTimer();
     _stopConnectionTicker();
@@ -821,6 +2175,8 @@ class TradingEngine {
   }
 
   void dispose() {
+    disableTrading(reason: 'engine_disposed');
+    stopMarketData();
     _klineController.close();
     _tradeController.close();
     _accountTradeController.close();
@@ -832,7 +2188,8 @@ class TradingEngine {
     _decisionPlanController.close();
     _consoleLogController.close();
     _pendingOrderController.close();
-    stopMarketData();
+    _openOrderController.close();
+    _orderBookSnapshotController.close();
   }
 
   void _recordMessageTimestamp(Map<String, dynamic> event) {
@@ -909,6 +2266,7 @@ class TradingEngine {
   Future<void> clearTrades() async {
     _trades = [];
     _tradeController.add(_trades);
+    _clearPlanRiskTargets();
     _cooldownUntil = null;
     _protectionLockUntil = null;
     _protectionLockReason = null;
@@ -920,12 +2278,103 @@ class TradingEngine {
     await tradeHistoryService.clearTrades(symbol);
   }
 
+  Future<OrderBookSnapshot?> refreshOrderBook() async {
+    await _refreshOrderBookContextIfNeeded(force: true);
+    return _orderBookSnapshot;
+  }
+
+  Future<int> cancelBotEntryOrders({
+    String reason = 'execution disarmed',
+  }) async {
+    if (!_isExchangeSyncMode || !apiService.allowOrderMutations) {
+      return 0;
+    }
+
+    await _reconcileAmbiguousEntryIntents();
+    final orderIdsByClientId = <String, String>{
+      for (final order in _ownedEntryOrders)
+        if (order.orderId.isNotEmpty)
+          (order.clientOrderId ?? order.orderId): order.orderId,
+      for (final intent in _ambiguousEntryIntents.values)
+        if (intent.orderId != null && intent.orderId!.isNotEmpty)
+          intent.clientOrderId: intent.orderId!,
+    };
+    final unresolvedClientIds = _ambiguousEntryIntents.values
+        .where((intent) => intent.orderId == null || intent.orderId!.isEmpty)
+        .map((intent) => intent.clientOrderId)
+        .toList();
+    if (orderIdsByClientId.isEmpty && unresolvedClientIds.isEmpty) {
+      return 0;
+    }
+
+    final cancelledIds = <String>{};
+    final failures = <String>[];
+    for (final entry in orderIdsByClientId.entries) {
+      try {
+        await apiService.cancelOrder(symbol: symbol, orderId: entry.value);
+        cancelledIds.add(entry.value);
+      } catch (error) {
+        failures.add('${entry.value}: $error');
+      }
+    }
+    failures.addAll(
+      unresolvedClientIds.map(
+        (clientId) => '$clientId: Binance has not exposed an order id yet',
+      ),
+    );
+
+    if (cancelledIds.isNotEmpty) {
+      _openOrders = _openOrders
+          .where((order) => !cancelledIds.contains(order.orderId))
+          .toList();
+      if (_openPosition == null && _ownedEntryOrders.isEmpty) {
+        _hasOwnedEntryIntent = false;
+      }
+      _emitOpenOrders();
+      _logConsole(
+        'Cancelled ${cancelledIds.length} iFutures entry order${cancelledIds.length == 1 ? '' : 's'} because ${reason.replaceAll('_', ' ')}.',
+        level: StrategyConsoleLevel.warning,
+      );
+    }
+
+    if (failures.isNotEmpty) {
+      throw StateError(
+        'Entry cancellation was not fully confirmed: ${failures.join('; ')}',
+      );
+    }
+    return cancelledIds.length;
+  }
+
   Future<bool> _loadInitialAccountState() async {
     if (!apiService.hasCredentials) {
       return false;
     }
 
     return _syncExchangeState(logSuccess: true);
+  }
+
+  Future<void> _refreshFuturesPositionMode({bool logChange = false}) async {
+    if (!apiService.hasCredentials) {
+      return;
+    }
+
+    final previousMode = _futuresPositionMode;
+    try {
+      final resolvedMode = await apiService.getPositionMode();
+      _futuresPositionMode = resolvedMode;
+      if (logChange || resolvedMode != previousMode) {
+        _logConsole(
+          'Binance futures mode detected: ${_futuresPositionModeLabel}.',
+        );
+      }
+    } catch (error) {
+      if (logChange) {
+        _logConsole(
+          'Could not confirm Binance futures mode. Using ${_futuresPositionModeLabel} assumptions for now.',
+          level: StrategyConsoleLevel.warning,
+        );
+      }
+    }
   }
 
   void _startExchangeSyncTimer() {
@@ -943,6 +2392,180 @@ class TradingEngine {
     _exchangeSyncTimer = null;
   }
 
+  Future<void> _startUserDataStream({bool fromRetry = false}) async {
+    if (!apiService.hasCredentials ||
+        !_isStreaming ||
+        _userDataSubscription != null ||
+        _isStartingUserDataStream ||
+        (!fromRetry && _userDataRetryTimer != null)) {
+      return;
+    }
+
+    _isStartingUserDataStream = true;
+    try {
+      final listenKey = await apiService.startUserDataStream();
+      if (!_isStreaming) {
+        unawaited(apiService.closeUserDataStream(listenKey));
+        return;
+      }
+      _userDataListenKey = listenKey;
+      _userDataSubscription = wsService
+          .subscribeToUserData(listenKey)
+          .listen(
+            _handleUserDataEvent,
+            onError: (Object error) {
+              _handleUserDataStreamDisconnect(error: error);
+            },
+            onDone: _handleUserDataStreamDisconnect,
+            cancelOnError: true,
+          );
+      _userDataKeepAliveTimer?.cancel();
+      _userDataRetryTimer?.cancel();
+      _userDataRetryTimer = null;
+      _userDataRetryAttempt = 0;
+      _userDataKeepAliveTimer = Timer.periodic(
+        const Duration(minutes: 25),
+        (_) => unawaited(_keepUserDataStreamAlive()),
+      );
+      _logConsole(
+        'Binance fill and order-event stream is active for immediate protection checks.',
+        level: StrategyConsoleLevel.success,
+      );
+    } catch (error) {
+      _logConsole(
+        'Binance user-data stream could not start: $error. Periodic account sync remains active while the stream retries.',
+        level: StrategyConsoleLevel.warning,
+      );
+      _scheduleUserDataStreamRetry();
+    } finally {
+      _isStartingUserDataStream = false;
+    }
+  }
+
+  void _scheduleUserDataStreamRetry() {
+    if (!_isStreaming ||
+        !apiService.hasCredentials ||
+        _userDataSubscription != null ||
+        _userDataRetryTimer != null) {
+      return;
+    }
+
+    final baseMs = userDataRetryBaseDelay.inMilliseconds < 1
+        ? 1
+        : userDataRetryBaseDelay.inMilliseconds;
+    final maxMs = userDataRetryMaxDelay.inMilliseconds < baseMs
+        ? baseMs
+        : userDataRetryMaxDelay.inMilliseconds;
+    var delayMs = baseMs;
+    for (
+      var index = 0;
+      index < _userDataRetryAttempt && delayMs < maxMs;
+      index++
+    ) {
+      delayMs = (delayMs * 2).clamp(1, maxMs).toInt();
+    }
+    _userDataRetryAttempt += 1;
+    final delay = Duration(milliseconds: delayMs);
+    _userDataRetryTimer = Timer(delay, () {
+      _userDataRetryTimer = null;
+      if (_isStreaming && _userDataSubscription == null) {
+        unawaited(_startUserDataStream(fromRetry: true));
+      }
+    });
+    _logConsole(
+      'Retrying the Binance user-data stream in ${delay.inSeconds > 0 ? '${delay.inSeconds}s' : '${delay.inMilliseconds}ms'}.',
+      level: StrategyConsoleLevel.warning,
+    );
+  }
+
+  void _handleUserDataStreamDisconnect({Object? error}) {
+    final subscription = _userDataSubscription;
+    if (subscription == null) {
+      return;
+    }
+    _userDataSubscription = null;
+    unawaited(subscription.cancel());
+    _userDataKeepAliveTimer?.cancel();
+    _userDataKeepAliveTimer = null;
+    final listenKey = _userDataListenKey;
+    _userDataListenKey = null;
+    if (listenKey != null && apiService.hasCredentials) {
+      unawaited(apiService.closeUserDataStream(listenKey).catchError((_) {}));
+    }
+    _logConsole(
+      error == null
+          ? 'Binance user-data stream closed. Periodic account sync remains active while the stream reconnects.'
+          : 'Binance user-data stream error: $error. Periodic account sync remains active while the stream reconnects.',
+      level: StrategyConsoleLevel.warning,
+    );
+    _scheduleUserDataStreamRetry();
+  }
+
+  Future<void> _keepUserDataStreamAlive() async {
+    final listenKey = _userDataListenKey;
+    if (listenKey == null || !_isStreaming) {
+      return;
+    }
+    try {
+      await apiService.keepAliveUserDataStream(listenKey);
+    } catch (error) {
+      _logConsole(
+        'Binance user-data keepalive failed; renewing the stream: $error',
+        level: StrategyConsoleLevel.warning,
+      );
+      await _restartUserDataStream();
+    }
+  }
+
+  void _handleUserDataEvent(dynamic payload) {
+    if (payload is! Map) {
+      return;
+    }
+    final eventType = '${payload['e'] ?? payload['eventType'] ?? ''}'
+        .toUpperCase();
+    if (eventType == 'LISTENKEYEXPIRED' || eventType == 'LISTEN_KEY_EXPIRED') {
+      unawaited(_restartUserDataStream());
+      return;
+    }
+    if (eventType != 'ORDER_TRADE_UPDATE' &&
+        eventType != 'ACCOUNT_UPDATE' &&
+        eventType != 'ALGO_UPDATE') {
+      return;
+    }
+
+    _userDataSyncDebounceTimer?.cancel();
+    _userDataSyncDebounceTimer = Timer(const Duration(milliseconds: 120), () {
+      if (_isStreaming) {
+        unawaited(_syncExchangeState());
+      }
+    });
+  }
+
+  Future<void> _restartUserDataStream() async {
+    _stopUserDataStream(closeRemote: false);
+    if (_isStreaming) {
+      await _startUserDataStream();
+    }
+  }
+
+  void _stopUserDataStream({bool closeRemote = true}) {
+    _userDataKeepAliveTimer?.cancel();
+    _userDataKeepAliveTimer = null;
+    _userDataSyncDebounceTimer?.cancel();
+    _userDataSyncDebounceTimer = null;
+    _userDataRetryTimer?.cancel();
+    _userDataRetryTimer = null;
+    _userDataRetryAttempt = 0;
+    final subscription = _userDataSubscription;
+    _userDataSubscription = null;
+    unawaited(subscription?.cancel());
+    final listenKey = _userDataListenKey;
+    _userDataListenKey = null;
+    if (closeRemote && listenKey != null && apiService.hasCredentials) {
+      unawaited(apiService.closeUserDataStream(listenKey).catchError((_) {}));
+    }
+  }
+
   Future<void> _refreshOrderBookContextIfNeeded({bool force = false}) async {
     final now = DateTime.now();
     if (!force &&
@@ -953,9 +2576,14 @@ class TradingEngine {
 
     try {
       final payload = await apiService.getOrderBook(symbol: symbol, limit: 20);
+      final plannedQuantity =
+          riskSettings.resolveQuantity(
+            _klines.isNotEmpty ? _klines.last.close : null,
+          ) ??
+          riskSettings.tradeQuantity;
       final snapshot = OrderBookAnalyzer.analyze(
         payload,
-        plannedQuantity: riskSettings.tradeQuantity,
+        plannedQuantity: plannedQuantity,
         capturedAt: now,
       );
       final previousCapturedAt = _orderBookSyncedAt;
@@ -967,6 +2595,7 @@ class TradingEngine {
         );
       }
       _orderBookSyncedAt = now;
+      _emitOrderBookSnapshot(snapshot);
       final trendSnapshot = orderBookTrendSnapshot;
 
       if (previousCapturedAt == null ||
@@ -991,6 +2620,12 @@ class TradingEngine {
   }
 
   Future<bool> _syncExchangeState({bool logSuccess = false}) async {
+    if (_isExchangeSyncInFlight) {
+      await _exchangeSyncCompleter?.future;
+      return _syncExchangeState(logSuccess: logSuccess);
+    }
+    _isExchangeSyncInFlight = true;
+    _exchangeSyncCompleter = Completer<void>();
     if (!apiService.hasCredentials) {
       _emitBinanceAccountStatus(
         BinanceAccountStatus.notConfigured(
@@ -998,13 +2633,19 @@ class TradingEngine {
           message: 'Binance API credentials are not configured.',
         ),
       );
+      _isExchangeSyncInFlight = false;
+      _exchangeSyncCompleter?.complete();
+      _exchangeSyncCompleter = null;
       return false;
     }
 
     try {
+      await _refreshFuturesPositionMode(logChange: logSuccess);
       final results = await Future.wait<dynamic>([
         apiService.getPositionRisk(symbol: symbol),
         apiService.getAccountInfo(),
+        apiService.getOpenOrders(symbol: symbol),
+        apiService.getOpenAlgoOrders(symbol: symbol),
         ...trackedSymbols.map(
           (trackedSymbol) =>
               apiService.getUserTrades(symbol: trackedSymbol, limit: 100),
@@ -1017,11 +2658,15 @@ class TradingEngine {
       final accountSummary = _parseExchangeAccountSummary(
         results[1] as Map<String, dynamic>,
       );
+      final syncedOpenOrders = <LiveOrder>[
+        ..._parseExchangeOpenOrders(results[2] as List<dynamic>),
+        ..._parseExchangeOpenAlgoOrders(results[3] as List<dynamic>),
+      ]..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
       final groupedTrades = <String, List<Trade>>{};
       for (var i = 0; i < trackedSymbols.length; i++) {
         final trackedSymbol = trackedSymbols[i];
         groupedTrades[trackedSymbol] = _parseExchangeTrades(
-          results[i + 2] as List<dynamic>,
+          results[i + 4] as List<dynamic>,
           symbolFilter: trackedSymbol,
         );
       }
@@ -1037,17 +2682,43 @@ class TradingEngine {
         _accountTrades,
         syncedAccountTrades,
       );
+      final openOrdersChanged = !_sameOpenOrders(_openOrders, syncedOpenOrders);
 
+      final hasOwnedEntryOrder = syncedOpenOrders.any(
+        (order) => order.isEntryOrderOwnedBy(clientOrderOwnerId),
+      );
       _openPosition = syncedPosition;
+      if (_openPosition == null) {
+        _ownsActivePosition = false;
+        _hasOwnedEntryIntent =
+            hasOwnedEntryOrder || _ambiguousEntryIntents.isNotEmpty;
+        _clearPlanRiskTargets();
+      } else {
+        if (positionChanged) {
+          _ownsActivePosition = _hasOwnedEntryIntent;
+        } else if (_hasOwnedEntryIntent) {
+          _ownsActivePosition = true;
+        }
+        if (positionChanged ||
+            (_activeTakeProfitPrice == null && _activeStopLossPrice == null)) {
+          _syncLiveRiskTargets(plan: _lastDecisionPlan, replaceExisting: true);
+        }
+      }
       _trades = syncedTrades;
       _accountTrades = syncedAccountTrades;
+      _openOrders = syncedOpenOrders;
+      await _reconcileAmbiguousEntryIntents(accountSnapshotIsCurrent: true);
       _walletBalance = accountSummary.walletBalance;
       _availableBalance = accountSummary.availableBalance;
       _openPositionCount = accountSummary.openPositionCount;
       _lastExecutionBlockFingerprint = null;
+      if (positionChanged || tradesChanged || accountTradesChanged) {
+        _lastLiveStrategyFingerprint = null;
+      }
       _positionController.add(_openPosition);
       _tradeController.add(_trades);
       _accountTradeController.add(_accountTrades);
+      _emitOpenOrders();
       _restoreProtectionWindowsFromTrades();
       await Future.wait([
         for (final entry in groupedTrades.entries)
@@ -1057,14 +2728,15 @@ class TradingEngine {
       if (logSuccess ||
           positionChanged ||
           tradesChanged ||
-          accountTradesChanged) {
+          accountTradesChanged ||
+          openOrdersChanged) {
         final positionLabel = _openPosition == null
             ? 'no open position'
             : '${_openPosition!.isLong ? 'LONG' : 'SHORT'} '
                   '${_formatQuantity(_openPosition!.quantity)} @ '
                   '${_openPosition!.entryPrice.toStringAsFixed(_openPosition!.entryPrice >= 100 ? 2 : 6)}';
         _logConsole(
-          'Synced Binance account state: ${_trades.length} ${symbol.toUpperCase()} fills, ${_accountTrades.length} tracked fills total, $positionLabel. Wallet ${_walletBalance?.toStringAsFixed(2) ?? '--'} USDT, available ${_availableBalance?.toStringAsFixed(2) ?? '--'} USDT.',
+          'Synced Binance account state: ${_trades.length} ${symbol.toUpperCase()} fills, ${_accountTrades.length} tracked fills total, ${_openOrders.length} working orders, $positionLabel. Wallet ${_walletBalance?.toStringAsFixed(2) ?? '--'} USDT, available ${_availableBalance?.toStringAsFixed(2) ?? '--'} USDT. Mode ${_futuresPositionModeLabel}.',
           level: StrategyConsoleLevel.success,
         );
       }
@@ -1076,6 +2748,20 @@ class TradingEngine {
               '${apiService.isTestnet ? 'Binance demo' : 'Binance live'} account sync is active.',
         ),
       );
+      unawaited(_startUserDataStream());
+      await _reconcileExchangeProtectionOrders(plan: _lastDecisionPlan);
+      if (!_isAutoTradingEnabled &&
+          !_manualOverrideActive &&
+          _ownedEntryOrders.isNotEmpty &&
+          apiService.allowOrderMutations) {
+        try {
+          await cancelBotEntryOrders(reason: 'execution is disarmed');
+        } catch (error) {
+          _logExecutionBlocked(
+            'A disarmed iFutures entry still needs cancellation confirmation: $error',
+          );
+        }
+      }
       return true;
     } catch (e) {
       final limitedMessage = await _buildLimitedExchangeAccessMessage(e);
@@ -1107,6 +2793,10 @@ class TradingEngine {
         );
       }
       return false;
+    } finally {
+      _isExchangeSyncInFlight = false;
+      _exchangeSyncCompleter?.complete();
+      _exchangeSyncCompleter = null;
     }
   }
 
@@ -1184,6 +2874,502 @@ class TradingEngine {
 
   bool get _isExchangeSyncMode => apiService.hasCredentials;
 
+  List<LiveOrder> get _currentProtectionOrders => _openOrders
+      .where(
+        (order) =>
+            order.isProtectionOrder && order.isOwnedBy(clientOrderOwnerId),
+      )
+      .toList();
+
+  List<LiveOrder> get _ownedEntryOrders => _openOrders
+      .where((order) => order.isEntryOrderOwnedBy(clientOrderOwnerId))
+      .toList();
+
+  Future<void> _reconcileExchangeProtectionOrders({
+    StrategyTradePlan? plan,
+  }) async {
+    if (!_isExchangeSyncMode ||
+        _binanceAccountStatus.state != BinanceAccountState.active ||
+        _isProtectionOrderSyncInFlight) {
+      return;
+    }
+    if (_futuresPositionMode == BinanceFuturesPositionMode.unknown) {
+      _logExecutionBlocked(
+        'TP/SL synchronization is paused until Binance confirms the Futures position mode.',
+      );
+      return;
+    }
+
+    _isProtectionOrderSyncInFlight = true;
+    try {
+      final position = _openPosition;
+      final existingProtectionOrders = _currentProtectionOrders;
+      if (position == null) {
+        if (existingProtectionOrders.isNotEmpty) {
+          await _cancelExchangeProtectionOrdersIfNeeded(
+            reason: 'no open position remains',
+          );
+        }
+        return;
+      }
+
+      if (!_ownsActivePosition) {
+        _logExecutionBlocked(
+          'An existing Binance position is being monitored but is not owned by this iFutures installation. Its orders will not be changed, even if stale iFutures protection is visible. Manage it on Binance or close it before arming a new bot trade.',
+        );
+        return;
+      }
+
+      _syncLiveRiskTargets(plan: plan, replaceExisting: false);
+      final takeProfit = _activeTakeProfitPrice;
+      final stopLoss = _activeStopLossPrice;
+
+      if ((takeProfit == null || takeProfit <= 0) &&
+          (stopLoss == null || stopLoss <= 0)) {
+        if (existingProtectionOrders.isNotEmpty) {
+          await _cancelExchangeProtectionOrdersIfNeeded(
+            reason: 'TP/SL rules are disabled',
+          );
+        }
+        return;
+      }
+
+      final rules = await apiService.getSymbolRules(symbol);
+      final normalizedTakeProfit = takeProfit == null
+          ? null
+          : (rules?.normalizePrice(takeProfit) ?? takeProfit);
+      final normalizedStopLoss = stopLoss == null
+          ? null
+          : (rules?.normalizePrice(stopLoss) ?? stopLoss);
+      final closeSide = position.isLong ? 'SELL' : 'BUY';
+      final positionSide = _exchangePositionSideForPosition(position);
+
+      final matchingTakeProfit = normalizedTakeProfit == null
+          ? null
+          : _matchingProtectionOrder(
+              existingProtectionOrders,
+              type: 'TAKE_PROFIT_MARKET',
+              side: closeSide,
+              stopPrice: normalizedTakeProfit,
+              positionSide: positionSide,
+              position: position,
+            );
+      final matchingStopLoss = normalizedStopLoss == null
+          ? null
+          : _matchingProtectionOrder(
+              existingProtectionOrders,
+              type: 'STOP_MARKET',
+              side: closeSide,
+              stopPrice: normalizedStopLoss,
+              positionSide: positionSide,
+              position: position,
+            );
+      final expectedCount =
+          (normalizedTakeProfit != null ? 1 : 0) +
+          (normalizedStopLoss != null ? 1 : 0);
+      final needsRefresh =
+          existingProtectionOrders.length != expectedCount ||
+          (normalizedTakeProfit != null && matchingTakeProfit == null) ||
+          (normalizedStopLoss != null && matchingStopLoss == null);
+      if (!needsRefresh) {
+        return;
+      }
+
+      // Install and record the replacement stop before removing old protection.
+      // Binance USD-M Futures has no atomic bracket/OCO transaction, so this
+      // ordering avoids an unprotected gap during a refresh.
+      final retainedOrders = <LiveOrder>[];
+      final createdOrders = <LiveOrder>[];
+      if (normalizedStopLoss != null) {
+        final stopOrder =
+            matchingStopLoss ??
+            await _submitExchangeProtectionOrder(
+              type: 'STOP_MARKET',
+              side: closeSide,
+              stopPrice: normalizedStopLoss,
+              position: position,
+            );
+        retainedOrders.add(stopOrder);
+        if (matchingStopLoss == null) {
+          createdOrders.add(stopOrder);
+          _appendOwnedProtectionOrder(stopOrder);
+        }
+      }
+      if (normalizedTakeProfit != null) {
+        final takeProfitOrder =
+            matchingTakeProfit ??
+            await _submitExchangeProtectionOrder(
+              type: 'TAKE_PROFIT_MARKET',
+              side: closeSide,
+              stopPrice: normalizedTakeProfit,
+              position: position,
+            );
+        retainedOrders.add(takeProfitOrder);
+        if (matchingTakeProfit == null) {
+          createdOrders.add(takeProfitOrder);
+          _appendOwnedProtectionOrder(takeProfitOrder);
+        }
+      }
+
+      await _cancelExchangeProtectionOrdersIfNeeded(
+        reason: 'refreshing Binance TP/SL protection',
+        preserveOrderIds: retainedOrders.map((order) => order.orderId).toSet(),
+      );
+      _replaceOwnedProtectionOrders(retainedOrders);
+
+      if (createdOrders.isNotEmpty) {
+        _logConsole(
+          'Placed Binance TP/SL protection for ${position.isLong ? 'LONG' : 'SHORT'} ${symbol.toUpperCase()}: TP ${normalizedTakeProfit == null ? '--' : _formatPriceValue(normalizedTakeProfit)}, SL ${normalizedStopLoss == null ? '--' : _formatPriceValue(normalizedStopLoss)}.',
+          level: StrategyConsoleLevel.success,
+        );
+      }
+    } catch (error) {
+      _logExecutionBlocked('TP/SL protection sync failed: $error');
+    } finally {
+      _isProtectionOrderSyncInFlight = false;
+    }
+  }
+
+  void _replaceOwnedProtectionOrders(List<LiveOrder> replacements) {
+    _openOrders = [
+      ..._openOrders.where(
+        (order) =>
+            !(order.isProtectionOrder && order.isOwnedBy(clientOrderOwnerId)),
+      ),
+      ...replacements,
+    ]..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    _emitOpenOrders();
+  }
+
+  void _appendOwnedProtectionOrder(LiveOrder order) {
+    _openOrders = [..._openOrders, order]
+      ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
+    _emitOpenOrders();
+  }
+
+  Future<bool> _ensureLiveStopProtectionOrFlatten() async {
+    final position = _openPosition;
+    if (position == null || _activeStopLossPrice == null) {
+      return true;
+    }
+
+    await _reconcileExchangeProtectionOrders(plan: _lastDecisionPlan);
+    BinanceSymbolRules? rules;
+    try {
+      rules = await apiService.getSymbolRules(symbol);
+    } catch (_) {
+      // Confirmation still falls through to emergency flatten if rules cannot
+      // be refreshed; a read failure must not count as verified protection.
+    }
+    final normalizedStop =
+        rules?.normalizePrice(_activeStopLossPrice!) ?? _activeStopLossPrice!;
+    final closeSide = position.isLong ? 'SELL' : 'BUY';
+    final positionSide = _exchangePositionSideForPosition(position);
+    final localStop = _matchingProtectionOrder(
+      _currentProtectionOrders,
+      type: 'STOP_MARKET',
+      side: closeSide,
+      stopPrice: normalizedStop,
+      positionSide: positionSide,
+      position: position,
+    );
+    final freshlyReadStop = localStop?.clientOrderId == null
+        ? null
+        : await _reconcileUnknownAlgoOrder(localStop!.clientOrderId!);
+    final confirmedStop = freshlyReadStop == null
+        ? null
+        : _matchingProtectionOrder(
+            <LiveOrder>[freshlyReadStop],
+            type: 'STOP_MARKET',
+            side: closeSide,
+            stopPrice: normalizedStop,
+            positionSide: positionSide,
+            position: position,
+          );
+    if (confirmedStop != null) {
+      return true;
+    }
+
+    _logExecutionBlocked(
+      'Critical: Binance stop protection could not be confirmed. Flattening the iFutures-owned position instead of leaving live exposure unprotected.',
+    );
+    final closeAction = position.isLong
+        ? ManualOrderAction.closeLong
+        : ManualOrderAction.closeShort;
+    try {
+      await _submitExchangeOrder(
+        closeAction,
+        quantity: position.quantity,
+        orderType: ManualOrderType.market,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await _syncExchangeState(logSuccess: true);
+    } catch (error) {
+      _logExecutionBlocked(
+        'Emergency flatten failed. Close the position on Binance immediately: $error',
+      );
+    }
+    return false;
+  }
+
+  Future<void> _cancelExchangeProtectionOrdersIfNeeded({
+    required String reason,
+    Set<String> preserveOrderIds = const <String>{},
+  }) async {
+    final protectionOrders = _currentProtectionOrders
+        .where((order) => !preserveOrderIds.contains(order.orderId))
+        .toList();
+    if (protectionOrders.isEmpty) {
+      return;
+    }
+
+    final cancelledIds = <String>{};
+    final failures = <String>[];
+    for (final order in protectionOrders) {
+      if (order.orderId.isEmpty) {
+        failures.add('missing order id (${order.clientOrderId ?? 'unknown'})');
+        continue;
+      }
+      try {
+        if (order.isAlgo) {
+          await apiService.cancelAlgoOrder(algoId: order.orderId);
+        } else {
+          await apiService.cancelOrder(symbol: symbol, orderId: order.orderId);
+        }
+        cancelledIds.add(order.orderId);
+      } catch (error) {
+        failures.add('${order.orderId}: $error');
+        _logExecutionBlocked(
+          'Failed to cancel Binance protection order ${order.orderId}: $error',
+        );
+      }
+    }
+
+    _openOrders = _openOrders
+        .where((order) => !cancelledIds.contains(order.orderId))
+        .toList();
+    _emitOpenOrders();
+    if (cancelledIds.isNotEmpty) {
+      _logConsole(
+        'Cancelled ${cancelledIds.length} Binance TP/SL order${cancelledIds.length == 1 ? '' : 's'} because $reason.',
+        level: StrategyConsoleLevel.warning,
+      );
+    }
+    if (failures.isNotEmpty) {
+      throw StateError(
+        'Protection cancellation was not fully confirmed: ${failures.join('; ')}',
+      );
+    }
+  }
+
+  Future<LiveOrder> _submitExchangeProtectionOrder({
+    required String type,
+    required String side,
+    required double stopPrice,
+    required Position position,
+  }) async {
+    final rules = await apiService.getSymbolRules(symbol);
+    final formattedStopPrice =
+        rules?.formatPrice(stopPrice) ?? _formatExchangeDecimal(stopPrice);
+    final positionSide = _exchangePositionSideForPosition(position);
+    final clientAlgoId = _nextClientOrderId(
+      type == 'STOP_MARKET' ? 'sl' : 'tp',
+    );
+    late final Map<String, dynamic> response;
+    try {
+      response = await apiService.placeAlgoOrder(
+        symbol: symbol,
+        side: side,
+        type: type,
+        triggerPrice: formattedStopPrice,
+        positionSide: positionSide,
+        closePosition: true,
+        workingType: 'MARK_PRICE',
+        priceProtect: false,
+        clientAlgoId: clientAlgoId,
+      );
+    } on BinanceRequestOutcomeUnknownException {
+      final reconciled = await _reconcileUnknownAlgoOrder(clientAlgoId);
+      if (reconciled == null) {
+        rethrow;
+      }
+      _logConsole(
+        'Recovered an uncertain Binance algo response by finding $clientAlgoId. No duplicate protection order was sent.',
+        level: StrategyConsoleLevel.warning,
+      );
+      return reconciled;
+    }
+    final algoId = response['algoId']?.toString() ?? '';
+    if (algoId.isEmpty) {
+      throw StateError(
+        'Binance accepted no verifiable algo order id for $type protection.',
+      );
+    }
+    final confirmed = await _reconcileUnknownAlgoOrder(clientAlgoId);
+    if (confirmed == null || confirmed.orderId != algoId) {
+      throw StateError(
+        'Binance acknowledged $type protection (#$algoId), but a fresh open-order read could not confirm it is working.',
+      );
+    }
+    return confirmed;
+  }
+
+  LiveOrder? _matchingProtectionOrder(
+    List<LiveOrder> orders, {
+    required String type,
+    required String side,
+    required double stopPrice,
+    required String? positionSide,
+    required Position position,
+  }) {
+    for (final order in orders) {
+      final trigger = order.triggerPrice;
+      final tolerance = stopPrice.abs() * 0.0000000001 > 0.00000001
+          ? stopPrice.abs() * 0.0000000001
+          : 0.00000001;
+      final matches =
+          order.orderId.isNotEmpty &&
+          order.type.toUpperCase() == type &&
+          order.side.toUpperCase() == side &&
+          _normalizedExchangePositionSide(order.positionSide) ==
+              _normalizedExchangePositionSide(positionSide) &&
+          trigger != null &&
+          (trigger - stopPrice).abs() <= tolerance &&
+          _fullyCoversPosition(order, position);
+      if (matches) {
+        return order;
+      }
+    }
+    return null;
+  }
+
+  static String _normalizedExchangePositionSide(String? value) {
+    final normalized = value?.trim().toUpperCase() ?? '';
+    return normalized == 'BOTH' ? '' : normalized;
+  }
+
+  static bool _fullyCoversPosition(LiveOrder order, Position position) {
+    if (order.closePosition) {
+      return true;
+    }
+    if (!order.reduceOnly || !order.quantity.isFinite || order.quantity <= 0) {
+      return false;
+    }
+    final tolerance = position.quantity.abs() * 0.00000001;
+    return order.quantity + tolerance >= position.quantity;
+  }
+
+  Future<LiveOrder?> _reconcileUnknownAlgoOrder(String clientAlgoId) async {
+    const delays = <Duration>[
+      Duration.zero,
+      Duration(milliseconds: 400),
+      Duration(milliseconds: 900),
+    ];
+    for (final delay in delays) {
+      if (delay > Duration.zero) {
+        await Future<void>.delayed(delay);
+      }
+      try {
+        final payload = await apiService.getOpenAlgoOrders(symbol: symbol);
+        final matches = _parseExchangeOpenAlgoOrders(
+          payload,
+        ).where((order) => order.clientOrderId == clientAlgoId);
+        if (matches.isNotEmpty) {
+          return matches.first;
+        }
+      } catch (_) {
+        return null;
+      }
+    }
+    return null;
+  }
+
+  String? _exchangePositionSideForPosition(Position position) {
+    return switch (_futuresPositionMode) {
+      BinanceFuturesPositionMode.oneWay => null,
+      BinanceFuturesPositionMode.hedge => position.isLong ? 'LONG' : 'SHORT',
+      BinanceFuturesPositionMode.unknown => throw StateError(
+        'Binance Futures position mode is unknown; protection routing is blocked.',
+      ),
+    };
+  }
+
+  void _syncLiveRiskTargets({
+    StrategyTradePlan? plan,
+    bool replaceExisting = false,
+  }) {
+    final position = _openPosition;
+    if (position == null) {
+      _clearPlanRiskTargets();
+      return;
+    }
+
+    final planMatchesSide =
+        plan != null &&
+        plan.isActionable &&
+        ((position.isLong && plan.signal == TradingSignal.buy) ||
+            (!position.isLong && plan.signal == TradingSignal.sell));
+    if (planMatchesSide) {
+      _applyPlanRiskTargets(plan, position);
+      return;
+    }
+
+    if (!replaceExisting &&
+        (_activeTakeProfitPrice != null || _activeStopLossPrice != null)) {
+      return;
+    }
+
+    _activeTakeProfitPrice = riskSettings.hasTakeProfit
+        ? position.takeProfitPrice(
+            riskSettings.resolveTakeProfitPercent(
+              position.entryPrice,
+              quantity: position.quantity,
+            ),
+          )
+        : null;
+    _activeStopLossPrice = riskSettings.hasStopLoss
+        ? position.stopLossPrice(
+            riskSettings.resolveStopLossPercent(
+              position.entryPrice,
+              quantity: position.quantity,
+            ),
+          )
+        : null;
+  }
+
+  void _applyPlanRiskTargets(StrategyTradePlan? plan, Position? position) {
+    if (plan == null || position == null || !plan.isActionable) {
+      _clearPlanRiskTargets();
+      return;
+    }
+
+    final takeProfitPercent = riskSettings.resolveTakeProfitPercent(
+      position.entryPrice,
+      quantity: position.quantity,
+      fallbackPercent: plan.takeProfitPercent,
+    );
+    final stopLossPercent = riskSettings.resolveStopLossPercent(
+      position.entryPrice,
+      quantity: position.quantity,
+      fallbackPercent: plan.stopLossPercent,
+    );
+    _activeTakeProfitPrice = takeProfitPercent > 0
+        ? position.takeProfitPrice(takeProfitPercent)
+        : null;
+    _activeStopLossPrice = stopLossPercent > 0
+        ? position.stopLossPrice(stopLossPercent)
+        : null;
+  }
+
+  void _clearPlanRiskTargets() {
+    _activeTakeProfitPrice = null;
+    _activeStopLossPrice = null;
+  }
+
+  String _formatExchangeDecimal(double value) {
+    return value.toStringAsFixed(8).replaceFirst(RegExp(r'\.?0+$'), '');
+  }
+
   String? _extractRequestIp(String body) {
     final match = RegExp(r'request ip:\s*([0-9a-fA-F\.:]+)').firstMatch(body);
     return match?.group(1);
@@ -1212,6 +3398,9 @@ class TradingEngine {
     required ManualOrderType orderType,
     required double requestedPrice,
   }) {
+    if (action.isOpenAction) {
+      _clearPlanRiskTargets();
+    }
     final side = action.positionSide;
     if (action.isOpenAction) {
       _openOrScalePosition(
@@ -1277,6 +3466,7 @@ class TradingEngine {
         entryPrice: weightedEntry,
         quantity: totalQuantity,
         entryTime: current.entryTime,
+        liquidationPrice: current.liquidationPrice,
       );
       _positionController.add(_openPosition);
       _recordEntryTrade(
@@ -1365,6 +3555,9 @@ class TradingEngine {
   }
 
   List<double> _buildScaleTargets(double start, double end, int steps) {
+    if (!start.isFinite || !end.isFinite || start <= 0 || end <= 0) {
+      throw ArgumentError('Scaled order prices must be finite and positive.');
+    }
     if (steps <= 1) {
       return [start];
     }
@@ -1385,6 +3578,13 @@ class TradingEngine {
   String _nextManualOrderId() {
     _manualOrderSequence += 1;
     return 'manual-${DateTime.now().millisecondsSinceEpoch}-$_manualOrderSequence';
+  }
+
+  String _nextClientOrderId(String role) {
+    _manualOrderSequence += 1;
+    final timestamp = DateTime.now().millisecondsSinceEpoch.toRadixString(36);
+    final sequence = _manualOrderSequence.toRadixString(36);
+    return 'ifut-$role-$clientOrderOwnerId-$timestamp-$sequence';
   }
 
   Future<void> _loadPersistedTrades() async {
@@ -1434,11 +3634,12 @@ class TradingEngine {
       minutes: riskSettings.protectionPauseMinutes,
     );
     var consecutiveLosses = 0;
-    var cumulativePnl = 0.0;
-    var peakPnl = 0.0;
+    final riskBudget = _riskBudgetBaselineUsdt(exits);
+    var riskBudgetEquity = riskBudget ?? 0.0;
+    var peakRiskBudgetEquity = riskBudgetEquity;
 
     for (final exit in exits) {
-      final pnl = exit.realizedPnl ?? 0;
+      final pnl = _netProtectionPnl(exit);
 
       if (pnl < 0) {
         consecutiveLosses += 1;
@@ -1446,9 +3647,9 @@ class TradingEngine {
         consecutiveLosses = 0;
       }
 
-      cumulativePnl += pnl;
-      if (cumulativePnl > peakPnl) {
-        peakPnl = cumulativePnl;
+      riskBudgetEquity += pnl;
+      if (riskBudgetEquity > peakRiskBudgetEquity) {
+        peakRiskBudgetEquity = riskBudgetEquity;
       }
 
       if (riskSettings.hasLossStreakProtection &&
@@ -1462,16 +3663,17 @@ class TradingEngine {
         }
       }
 
-      final drawdownPercent = peakPnl <= 0
+      final drawdownPercent = riskBudget == null
           ? 0.0
-          : ((peakPnl - cumulativePnl) / peakPnl) * 100;
-      if (riskSettings.hasDrawdownProtection &&
+          : ((peakRiskBudgetEquity - riskBudgetEquity) / riskBudget) * 100;
+      if (riskBudget != null &&
+          riskSettings.hasDrawdownProtection &&
           drawdownPercent >= riskSettings.maxDrawdownPercent) {
         final lockUntil = exit.timestamp.add(pauseDuration);
         if (lockUntil.isAfter(DateTime.now())) {
           _protectionLockUntil = lockUntil;
           _protectionLockReason =
-              'Drawdown lock: realized drawdown reached ${drawdownPercent.toStringAsFixed(1)}% (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
+              'Risk-budget drawdown lock: net realized drawdown reached ${drawdownPercent.toStringAsFixed(1)}% of the ${_formatUsdt(riskBudget)} risk budget (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
         }
       }
     }
@@ -1490,7 +3692,7 @@ class TradingEngine {
     final exits = _realizedExitTrades(_trades);
     var losses = 0;
     for (final trade in exits.reversed) {
-      if ((trade.realizedPnl ?? 0) < 0) {
+      if (_netProtectionPnl(trade) < 0) {
         losses += 1;
       } else {
         break;
@@ -1505,20 +3707,46 @@ class TradingEngine {
       return 0;
     }
 
-    var cumulativePnl = 0.0;
-    var peakPnl = 0.0;
+    final riskBudget = _riskBudgetBaselineUsdt(exits);
+    if (riskBudget == null) {
+      return 0;
+    }
+    var riskBudgetEquity = riskBudget;
+    var peakRiskBudgetEquity = riskBudget;
     for (final trade in exits) {
-      cumulativePnl += trade.realizedPnl ?? 0;
-      if (cumulativePnl > peakPnl) {
-        peakPnl = cumulativePnl;
+      riskBudgetEquity += _netProtectionPnl(trade);
+      if (riskBudgetEquity > peakRiskBudgetEquity) {
+        peakRiskBudgetEquity = riskBudgetEquity;
       }
     }
 
-    if (peakPnl <= 0) {
-      return 0;
+    return ((peakRiskBudgetEquity - riskBudgetEquity) / riskBudget) * 100;
+  }
+
+  double _netProtectionPnl(Trade trade) {
+    final rawPnl = trade.realizedPnl;
+    final grossPnl = rawPnl != null && rawPnl.isFinite ? rawPnl : 0.0;
+    final rawFee = trade.fee;
+    final fee = rawFee != null && rawFee.isFinite ? rawFee.abs() : 0.0;
+    return grossPnl - fee;
+  }
+
+  double? _riskBudgetBaselineUsdt(List<Trade> exits) {
+    final configuredBudget = riskSettings.investmentUsdt;
+    if (configuredBudget != null &&
+        configuredBudget.isFinite &&
+        configuredBudget > 0) {
+      return configuredBudget;
     }
 
-    return ((peakPnl - cumulativePnl) / peakPnl) * 100;
+    final leverage = riskSettings.leverage > 0 ? riskSettings.leverage : 1;
+    for (final exit in exits) {
+      final implicitMargin = (exit.price * exit.quantity.abs()) / leverage;
+      if (implicitMargin.isFinite && implicitMargin > 0) {
+        return implicitMargin;
+      }
+    }
+    return null;
   }
 
   void _applyExitProtections(Trade exitTrade) {
@@ -1533,7 +3761,7 @@ class TradingEngine {
     );
     if (riskSettings.hasLossStreakProtection &&
         _consecutiveLossCount() >= riskSettings.maxConsecutiveLosses &&
-        (exitTrade.realizedPnl ?? 0) < 0) {
+        _netProtectionPnl(exitTrade) < 0) {
       _protectionLockUntil = exitTrade.timestamp.add(pauseDuration);
       _protectionLockReason =
           'Loss streak lock: ${riskSettings.maxConsecutiveLosses} consecutive losses reached.';
@@ -1543,9 +3771,10 @@ class TradingEngine {
     final currentDrawdown = _currentRealizedDrawdownPercent();
     if (riskSettings.hasDrawdownProtection &&
         currentDrawdown >= riskSettings.maxDrawdownPercent) {
+      final riskBudget = _riskBudgetBaselineUsdt(_realizedExitTrades(_trades));
       _protectionLockUntil = exitTrade.timestamp.add(pauseDuration);
       _protectionLockReason =
-          'Drawdown lock: realized drawdown reached ${currentDrawdown.toStringAsFixed(1)}% (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
+          'Risk-budget drawdown lock: net realized drawdown reached ${currentDrawdown.toStringAsFixed(1)}%${riskBudget == null ? '' : ' of the ${_formatUsdt(riskBudget)} risk budget'} (limit ${riskSettings.maxDrawdownPercent.toStringAsFixed(1)}%).';
       _logConsole(_protectionLockReason!, level: StrategyConsoleLevel.warning);
     }
 
@@ -1636,6 +3865,8 @@ class TradingEngine {
   }
 
   Position? _parseExchangePosition(List<dynamic> payload) {
+    final matches = <Position>[];
+
     for (final item in payload) {
       if (item is! Map) {
         continue;
@@ -1648,25 +3879,43 @@ class TradingEngine {
 
       final amount = _asDouble(item['positionAmt']);
       if (amount == null || amount == 0) {
-        return null;
+        continue;
       }
 
       final entryPrice = _asDouble(item['entryPrice']) ?? 0;
+      final liquidationPrice = _asDouble(item['liquidationPrice']);
       final updateTime = _asInt(item['updateTime']) ?? 0;
       final entryTime = updateTime > 0
           ? DateTime.fromMillisecondsSinceEpoch(updateTime)
           : DateTime.now();
+      final positionSideValue =
+          item['positionSide']?.toString().toUpperCase() ?? '';
+      final side = switch (positionSideValue) {
+        'LONG' => PositionSide.long,
+        'SHORT' => PositionSide.short,
+        _ => amount > 0 ? PositionSide.long : PositionSide.short,
+      };
 
-      return Position(
-        symbol: symbol,
-        side: amount > 0 ? PositionSide.long : PositionSide.short,
-        entryPrice: entryPrice,
-        quantity: amount.abs(),
-        entryTime: entryTime,
+      matches.add(
+        Position(
+          symbol: symbol,
+          side: side,
+          entryPrice: entryPrice,
+          quantity: amount.abs(),
+          entryTime: entryTime,
+          liquidationPrice: liquidationPrice != null && liquidationPrice > 0
+              ? liquidationPrice
+              : null,
+        ),
       );
     }
 
-    return null;
+    if (matches.isEmpty) {
+      return null;
+    }
+
+    matches.sort((left, right) => right.quantity.compareTo(left.quantity));
+    return matches.first;
   }
 
   List<Trade> _parseExchangeTrades(
@@ -1731,6 +3980,103 @@ class TradingEngine {
     return trades;
   }
 
+  List<LiveOrder> _parseExchangeOpenOrders(List<dynamic> payload) {
+    final orders = <LiveOrder>[];
+
+    for (final item in payload) {
+      if (item is! Map) {
+        continue;
+      }
+
+      final orderSymbol = item['symbol']?.toString().toUpperCase();
+      if (orderSymbol == null || orderSymbol != symbol.toUpperCase()) {
+        continue;
+      }
+
+      final closePosition =
+          item['closePosition'] == true ||
+          '${item['closePosition'] ?? ''}'.toLowerCase() == 'true';
+      final quantity = _asDouble(item['origQty'] ?? item['quantity']) ?? 0;
+      if (!closePosition && quantity <= 0) {
+        continue;
+      }
+
+      final price = _asDouble(item['price']) ?? 0;
+      final stopPrice = _asDouble(item['stopPrice']);
+      final updateTime =
+          _asInt(item['updateTime']) ?? _asInt(item['time']) ?? 0;
+
+      orders.add(
+        LiveOrder(
+          symbol: orderSymbol,
+          orderId: item['orderId']?.toString() ?? '',
+          clientOrderId: item['clientOrderId']?.toString(),
+          side: item['side']?.toString().toUpperCase() ?? 'BUY',
+          type: item['type']?.toString().toUpperCase() ?? 'LIMIT',
+          price: price,
+          stopPrice: stopPrice,
+          quantity: quantity,
+          reduceOnly: item['reduceOnly'] == true,
+          closePosition: closePosition,
+          positionSide: item['positionSide']?.toString().toUpperCase(),
+          timeInForce: item['timeInForce']?.toString(),
+          updatedAt: updateTime > 0
+              ? DateTime.fromMillisecondsSinceEpoch(updateTime)
+              : DateTime.now(),
+        ),
+      );
+    }
+
+    orders.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return orders;
+  }
+
+  List<LiveOrder> _parseExchangeOpenAlgoOrders(List<dynamic> payload) {
+    final orders = <LiveOrder>[];
+
+    for (final item in payload) {
+      if (item is! Map) {
+        continue;
+      }
+      final orderSymbol = item['symbol']?.toString().toUpperCase();
+      if (orderSymbol == null || orderSymbol != symbol.toUpperCase()) {
+        continue;
+      }
+      final closePosition =
+          item['closePosition'] == true ||
+          '${item['closePosition'] ?? ''}'.toLowerCase() == 'true';
+      final quantity = _asDouble(item['quantity']) ?? 0;
+      if (!closePosition && quantity <= 0) {
+        continue;
+      }
+      final updateTime =
+          _asInt(item['updateTime']) ?? _asInt(item['createTime']) ?? 0;
+      orders.add(
+        LiveOrder(
+          symbol: orderSymbol,
+          orderId: item['algoId']?.toString() ?? '',
+          clientOrderId: item['clientAlgoId']?.toString(),
+          isAlgo: true,
+          side: item['side']?.toString().toUpperCase() ?? 'BUY',
+          type: item['orderType']?.toString().toUpperCase() ?? 'STOP_MARKET',
+          price: _asDouble(item['price']) ?? 0,
+          stopPrice: _asDouble(item['triggerPrice']),
+          quantity: quantity,
+          reduceOnly: item['reduceOnly'] == true,
+          closePosition: closePosition,
+          positionSide: item['positionSide']?.toString().toUpperCase(),
+          timeInForce: item['timeInForce']?.toString(),
+          updatedAt: updateTime > 0
+              ? DateTime.fromMillisecondsSinceEpoch(updateTime)
+              : DateTime.now(),
+        ),
+      );
+    }
+
+    orders.sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    return orders;
+  }
+
   static List<String> _normalizeTrackedSymbols(
     String currentSymbol,
     List<String> trackedSymbols,
@@ -1746,6 +4092,18 @@ class TradingEngine {
     return normalized.toList(growable: false);
   }
 
+  static String _normalizeClientOrderOwnerId(String value) {
+    final normalized = value.trim().toLowerCase();
+    if (!RegExp(r'^[a-z0-9]{8}$').hasMatch(normalized)) {
+      throw ArgumentError.value(
+        value,
+        'clientOrderOwnerId',
+        'Must contain exactly eight lowercase letters or digits.',
+      );
+    }
+    return normalized;
+  }
+
   bool _samePosition(Position? a, Position? b) {
     if (identical(a, b)) {
       return true;
@@ -1757,7 +4115,9 @@ class TradingEngine {
     return a.symbol == b.symbol &&
         a.side == b.side &&
         (a.entryPrice - b.entryPrice).abs() < 0.0000001 &&
-        (a.quantity - b.quantity).abs() < 0.0000001;
+        (a.quantity - b.quantity).abs() < 0.0000001 &&
+        ((a.liquidationPrice ?? 0) - (b.liquidationPrice ?? 0)).abs() <
+            0.0000001;
   }
 
   bool _sameTrades(List<Trade> a, List<Trade> b) {
@@ -1775,6 +4135,30 @@ class TradingEngine {
           left.kind != right.kind ||
           left.status != right.status ||
           (left.realizedPnl ?? 0) != (right.realizedPnl ?? 0)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  bool _sameOpenOrders(List<LiveOrder> a, List<LiveOrder> b) {
+    if (a.length != b.length) {
+      return false;
+    }
+    for (var i = 0; i < a.length; i++) {
+      final left = a[i];
+      final right = b[i];
+      if (left.orderId != right.orderId ||
+          left.clientOrderId != right.clientOrderId ||
+          left.isAlgo != right.isAlgo ||
+          left.side != right.side ||
+          left.type != right.type ||
+          (left.price - right.price).abs() > 0.0000001 ||
+          ((left.stopPrice ?? 0) - (right.stopPrice ?? 0)).abs() > 0.0000001 ||
+          (left.quantity - right.quantity).abs() > 0.0000001 ||
+          left.reduceOnly != right.reduceOnly ||
+          left.closePosition != right.closePosition ||
+          left.positionSide != right.positionSide) {
         return false;
       }
     }
@@ -1880,6 +4264,10 @@ class TradingEngine {
     return value.toStringAsFixed(digits);
   }
 
+  static String _formatPriceValue(double value) {
+    return value.toStringAsFixed(value >= 100 ? 2 : 6);
+  }
+
   static double? _asDouble(dynamic value) {
     if (value == null) {
       return null;
@@ -1902,6 +4290,32 @@ class TradingEngine {
     }
     return int.tryParse(value.toString());
   }
+
+  void _emitOrderBookSnapshot(OrderBookSnapshot? snapshot) {
+    if (_orderBookSnapshotController.isClosed) {
+      return;
+    }
+    _orderBookSnapshotController.add(snapshot);
+  }
+
+  void _emitOpenOrders() {
+    if (_openOrderController.isClosed) {
+      return;
+    }
+    _openOrderController.add(List.unmodifiable(_openOrders));
+  }
+}
+
+class _AmbiguousEntryIntent {
+  final String clientOrderId;
+  final DateTime createdAt;
+  String? orderId;
+  String? lastStatus;
+  double executedQuantity = 0;
+  int notFoundConfirmations = 0;
+  int flatAfterExecutionConfirmations = 0;
+
+  _AmbiguousEntryIntent({required this.clientOrderId, required this.createdAt});
 }
 
 class _ExchangeAccountSummary {

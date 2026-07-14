@@ -5,15 +5,59 @@ import '../../models/ai_provider.dart';
 import '../../models/rsi_strategy_preset.dart';
 import '../../models/strategy_mode.dart';
 import '../../trading/algo_strategy.dart';
-import '../../trading/ai_strategy.dart';
-import '../../trading/manual_strategy.dart';
 import '../../theme/app_theme.dart';
+import '../common/app_toast.dart';
 
-class ModeSelector extends ConsumerWidget {
+class ModeSelector extends ConsumerStatefulWidget {
   const ModeSelector({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ModeSelector> createState() => _ModeSelectorState();
+}
+
+class _ModeSelectorState extends ConsumerState<ModeSelector> {
+  bool _isSwitching = false;
+
+  Future<void> _switchMode(
+    StrategyMode nextMode, {
+    required String symbol,
+    required StrategyMode currentMode,
+  }) async {
+    if (_isSwitching || nextMode == currentMode) return;
+    setState(() => _isSwitching = true);
+    try {
+      final disarm = await ref
+          .read(tradingRuntimeSafetyProvider)
+          .disarmBeforeRuntimeChange(
+            symbol: symbol,
+            reason: 'strategy_mode_changed',
+          );
+      if (!disarm.canProceed) {
+        throw disarm.error ?? 'unknown order-reconciliation failure';
+      }
+      ref.read(isBotRunningProvider(symbol).notifier).state = false;
+      await ref
+          .read(currentStrategyProvider.notifier)
+          .setMode(nextMode, symbol: symbol);
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        'Strategy switch blocked because working orders could not be safely reconciled: $error',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.gpp_bad_outlined,
+        duration: const Duration(seconds: 5),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isSwitching = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final currentStrategy = ref.watch(currentStrategyProvider);
     final currentMode = ref.watch(currentStrategyModeProvider);
     final settings = ref.watch(settingsServiceProvider);
@@ -41,9 +85,13 @@ class ModeSelector extends ConsumerWidget {
           _buildOption(
             'ALGO',
             currentMode == StrategyMode.algo,
-            () => ref
-                .read(currentStrategyProvider.notifier)
-                .setMode(StrategyMode.algo, symbol: symbol),
+            _isSwitching
+                ? null
+                : () => _switchMode(
+                    StrategyMode.algo,
+                    symbol: symbol,
+                    currentMode: currentMode,
+                  ),
             tooltip: currentPreset == null
                 ? 'Switch to custom RSI settings'
                 : '${currentPreset.label}: ${currentPreset.summary}',
@@ -52,9 +100,13 @@ class ModeSelector extends ConsumerWidget {
           _buildOption(
             'AI',
             currentMode == StrategyMode.ai,
-            () => ref
-                .read(currentStrategyProvider.notifier)
-                .setMode(StrategyMode.ai, symbol: symbol),
+            _isSwitching
+                ? null
+                : () => _switchMode(
+                    StrategyMode.ai,
+                    symbol: symbol,
+                    currentMode: currentMode,
+                  ),
             tooltip:
                 'Switch to ${aiProviderFromKey(settings.getAiProvider()).label} signal analysis',
           ),
@@ -62,9 +114,13 @@ class ModeSelector extends ConsumerWidget {
           _buildOption(
             'MANUAL',
             currentMode == StrategyMode.manual,
-            () => ref
-                .read(currentStrategyProvider.notifier)
-                .setMode(StrategyMode.manual, symbol: symbol),
+            _isSwitching
+                ? null
+                : () => _switchMode(
+                    StrategyMode.manual,
+                    symbol: symbol,
+                    currentMode: currentMode,
+                  ),
             tooltip: 'Manual override mode',
           ),
         ],
@@ -75,7 +131,7 @@ class ModeSelector extends ConsumerWidget {
   Widget _buildOption(
     String label,
     bool isSelected,
-    VoidCallback onTap, {
+    VoidCallback? onTap, {
     String? tooltip,
   }) {
     return AnimatedContainer(

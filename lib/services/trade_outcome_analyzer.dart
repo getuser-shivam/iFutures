@@ -1,5 +1,6 @@
 import '../models/ai_trade_outcome_snapshot.dart';
 import '../models/trade.dart';
+import 'performance_summary_calculator.dart';
 
 class TradeOutcomeAnalyzer {
   const TradeOutcomeAnalyzer._();
@@ -44,17 +45,17 @@ class TradeOutcomeAnalyzer {
   }
 
   static AiTradeOutcomeSnapshot _fromTrade(Trade trade) {
-    final realizedPnl = trade.realizedPnl ?? 0.0;
+    final realizedPnl = PerformanceSummaryCalculator.realizedPnlAfterFee(trade);
     final reason = (trade.reason ?? 'unknown').replaceAll('_', ' ');
     final positionSideLabel = trade.side == 'SELL' ? 'LONG' : 'SHORT';
 
-    final outcomeLabel = switch ((realizedPnl >= 0, reason.toLowerCase())) {
-      (true, final reasonText) when reasonText.contains('take profit') =>
-        'Take-profit win',
-      (false, final reasonText) when reasonText.contains('stop loss') =>
-        'Stopped out',
-      (true, _) => 'Profitable exit',
-      (false, _) => 'Losing exit',
+    final reasonText = reason.toLowerCase();
+    final outcomeLabel = switch (realizedPnl) {
+      > 0 when reasonText.contains('take profit') => 'Take-profit win',
+      < 0 when reasonText.contains('stop loss') => 'Stopped out',
+      > 0 => 'Profitable exit',
+      < 0 => 'Losing exit',
+      _ => 'Break-even exit',
     };
 
     return AiTradeOutcomeSnapshot(

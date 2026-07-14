@@ -126,7 +126,7 @@ class StrategyConsoleCard extends ConsumerWidget {
                 color: AppColors.glowCyan,
               ),
               StatusPill(
-                label: plan?.summaryLabel ?? 'Waiting',
+                label: plan?.summaryLabel ?? 'Waiting for entry',
                 color: _signalColor(plan?.signal),
               ),
               StatusPill(
@@ -188,14 +188,14 @@ class StrategyConsoleCard extends ConsumerWidget {
               final metrics = [
                 _ConsoleMetric(
                   label: 'Action',
-                  value: plan?.actionLabel ?? 'WAIT',
+                  value: plan?.actionLabel ?? 'WAITING',
                   helper: 'Latest side',
                   accent: _signalColor(plan?.signal),
                 ),
                 _ConsoleMetric(
                   label: 'Order Type',
-                  value: plan?.orderTypeLabel.toUpperCase() ?? 'WATCH',
-                  helper: 'Execution style',
+                  value: plan?.orderTypeLabel.toUpperCase() ?? 'WAITING',
+                  helper: 'Execution style / state',
                   accent: AppColors.glowCyan,
                 ),
                 _ConsoleMetric(
@@ -425,7 +425,7 @@ class StrategyConsoleCard extends ConsumerWidget {
               );
             },
           ),
-          if (plan?.rationale?.trim().isNotEmpty == true) ...[
+          if (plan != null && plan.rationale.trim().isNotEmpty) ...[
             const SizedBox(height: 16),
             Container(
               width: double.infinity,
@@ -434,7 +434,7 @@ class StrategyConsoleCard extends ConsumerWidget {
                 color: AppColors.surfaceAlt,
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: _signalColor(plan?.signal).withValues(alpha: 0.25),
+                  color: _signalColor(plan.signal).withValues(alpha: 0.25),
                 ),
               ),
               child: Column(
@@ -450,7 +450,7 @@ class StrategyConsoleCard extends ConsumerWidget {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    plan!.rationale,
+                    plan.rationale,
                     style: const TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,

@@ -37,6 +37,7 @@ class BacktestService {
     final trades = <Trade>[];
     final equityCurve = <double>[startingBalance];
     Position? openPosition;
+    StrategyTradePlan? activePlan;
     double balance = startingBalance;
 
     for (final candle in klines) {
@@ -51,6 +52,7 @@ class BacktestService {
           strategyName: strategy.name,
           reason: null,
           riskSettings: riskSettings,
+          activePlan: activePlan,
         );
 
         if (maybeExit != null) {
@@ -58,10 +60,27 @@ class BacktestService {
           balance += maybeExit.pnl;
           equityCurve.add(balance);
           openPosition = null;
+          activePlan = null;
         }
       }
 
-      final signal = await strategy.evaluate(List<Kline>.unmodifiable(history));
+      StrategyTradePlan? plan;
+      late final TradingSignal signal;
+      if (strategy case final TradePlanningStrategy planningStrategy) {
+        plan = await planningStrategy.buildTradePlan(
+          List<Kline>.unmodifiable(history),
+          symbol: symbol,
+          riskSettings: riskSettings,
+          context: StrategyAnalysisContext(
+            openPosition: openPosition,
+            symbolTrades: List<Trade>.unmodifiable(trades),
+            accountTrades: List<Trade>.unmodifiable(trades),
+          ),
+        );
+        signal = plan.signal;
+      } else {
+        signal = await strategy.evaluate(List<Kline>.unmodifiable(history));
+      }
       if (signal == TradingSignal.hold) {
         continue;
       }
@@ -78,6 +97,11 @@ class BacktestService {
         reason: 'strategy',
         openPosition: openPosition,
         riskSettings: riskSettings,
+        quantity:
+            plan?.quantity ??
+            riskSettings.resolveQuantity(candle.close) ??
+            riskSettings.tradeQuantity,
+        plan: plan,
       );
 
       if (signalResult.exitTrade != null) {
@@ -87,6 +111,7 @@ class BacktestService {
       }
 
       openPosition = signalResult.openPosition;
+      activePlan = signalResult.activePlan;
 
       if (signalResult.entryTrade != null) {
         trades.add(signalResult.entryTrade!);
@@ -132,8 +157,9 @@ class BacktestService {
     required String reason,
     required Position? openPosition,
     required RiskSettings riskSettings,
+    required double quantity,
+    StrategyTradePlan? plan,
   }) {
-    final quantity = riskSettings.tradeQuantity;
     if (quantity <= 0) {
       return const _SignalResult.empty();
     }
@@ -157,11 +183,12 @@ class BacktestService {
           entryTime: timestamp,
         ),
         entryTrade: entryTrade,
+        activePlan: plan,
       );
     }
 
     if (openPosition.side == desiredSide) {
-      return _SignalResult(openPosition: openPosition);
+      return _SignalResult(openPosition: openPosition, activePlan: plan);
     }
 
     final close = _closePosition(
@@ -194,6 +221,7 @@ class BacktestService {
       exitTrade: close.trade,
       entryTrade: entryTrade,
       realizedPnL: close.pnl,
+      activePlan: plan,
     );
   }
 
@@ -205,9 +233,15 @@ class BacktestService {
     required String strategyName,
     String? reason,
     required RiskSettings riskSettings,
+    StrategyTradePlan? activePlan,
   }) {
-    if (riskSettings.hasStopLoss) {
-      final stopLoss = position.stopLossPrice(riskSettings.stopLossPercent);
+    final stopLossPercent = riskSettings.resolveStopLossPercent(
+      position.entryPrice,
+      quantity: position.quantity,
+      fallbackPercent: activePlan?.stopLossPercent,
+    );
+    if (stopLossPercent > 0) {
+      final stopLoss = position.stopLossPrice(stopLossPercent);
       final hitStopLoss = position.isLong
           ? currentPrice <= stopLoss
           : currentPrice >= stopLoss;
@@ -223,10 +257,13 @@ class BacktestService {
       }
     }
 
-    if (riskSettings.hasTakeProfit) {
-      final takeProfit = position.takeProfitPrice(
-        riskSettings.takeProfitPercent,
-      );
+    final takeProfitPercent = riskSettings.resolveTakeProfitPercent(
+      position.entryPrice,
+      quantity: position.quantity,
+      fallbackPercent: activePlan?.takeProfitPercent,
+    );
+    if (takeProfitPercent > 0) {
+      final takeProfit = position.takeProfitPrice(takeProfitPercent);
       final hitTakeProfit = position.isLong
           ? currentPrice >= takeProfit
           : currentPrice <= takeProfit;
@@ -309,17 +346,20 @@ class _SignalResult {
   final Trade? exitTrade;
   final Trade? entryTrade;
   final double realizedPnL;
+  final StrategyTradePlan? activePlan;
 
   const _SignalResult({
     this.openPosition,
     this.exitTrade,
     this.entryTrade,
     this.realizedPnL = 0,
+    this.activePlan,
   });
 
   const _SignalResult.empty()
     : openPosition = null,
       exitTrade = null,
       entryTrade = null,
-      realizedPnL = 0;
+      realizedPnL = 0,
+      activePlan = null;
 }

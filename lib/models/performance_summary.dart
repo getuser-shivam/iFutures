@@ -6,6 +6,11 @@ class PerformanceSummary {
   final double bestTrade;
   final double worstTrade;
   final double avgTrade;
+
+  /// Largest peak-to-trough decline in cumulative realized PnL, in USDT.
+  ///
+  /// A percentage is intentionally not reported because this summary does not
+  /// know the account's starting equity.
   final double maxDrawdown;
   final double profitFactor;
   final DateTime? windowStart;

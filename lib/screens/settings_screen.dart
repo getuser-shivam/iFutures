@@ -1,8 +1,10 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
 import '../models/ai_provider.dart';
 import '../models/ai_service_status.dart';
+import '../models/ai_trade_direction_mode.dart';
 import '../models/binance_account_status.dart';
 import '../models/manual_order.dart';
 import '../constants/symbols.dart';
@@ -17,7 +19,6 @@ import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/backtest_card.dart';
 import '../widgets/dashboard/manual_order_ticket.dart';
 import '../widgets/dashboard/mode_selector.dart';
-import '../trading/algo_strategy.dart';
 import '../trading/ai_strategy.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -35,6 +36,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   late TextEditingController _aiModelController;
   late TextEditingController _aiLongBiasController;
   late TextEditingController _aiShortBiasController;
+  late TextEditingController _aiInvestmentUsdtController;
+  late TextEditingController _aiLeverageController;
   late TextEditingController _symbolListController;
   late TextEditingController _stopLossController;
   late TextEditingController _takeProfitController;
@@ -50,6 +53,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   AiProvider _selectedAiProvider = AiProvider.groqChat;
   ManualOrderType _selectedAiLongOrderType = ManualOrderType.limit;
   ManualOrderType _selectedAiShortOrderType = ManualOrderType.limit;
+  AiTradeDirectionMode _selectedAiTradeDirectionMode =
+      AiTradeDirectionMode.auto;
   bool _isTestnet = true;
   String _savedApiKey = '';
   String _savedApiSecret = '';
@@ -59,9 +64,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   String _savedAiModel = '';
   String _savedAiLongBias = '';
   String _savedAiShortBias = '';
+  String _savedAiInvestmentUsdt = '';
+  String _savedAiLeverage = '';
   AiProvider _savedAiProvider = AiProvider.groqChat;
   ManualOrderType _savedAiLongOrderType = ManualOrderType.limit;
   ManualOrderType _savedAiShortOrderType = ManualOrderType.limit;
+  AiTradeDirectionMode _savedAiTradeDirectionMode = AiTradeDirectionMode.auto;
   bool _isLoading = true;
   bool _isTestingBinance = false;
   bool _isTestingAi = false;
@@ -84,6 +92,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _aiModelController = TextEditingController();
     _aiLongBiasController = TextEditingController();
     _aiShortBiasController = TextEditingController();
+    _aiInvestmentUsdtController = TextEditingController();
+    _aiLeverageController = TextEditingController();
     _symbolListController = TextEditingController();
     _stopLossController = TextEditingController();
     _takeProfitController = TextEditingController();
@@ -103,17 +113,27 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final settings = ref.read(settingsServiceProvider);
     await settings.init();
 
-    final apiKey = await settings.getApiKey();
-    final apiSecret = await settings.getApiSecret();
+    final isTestnet = settings.getIsTestnet();
+    var apiKey = await settings.getApiKey();
+    var apiSecret = await settings.getApiSecret();
+    if (kIsWeb &&
+        !isTestnet &&
+        ((apiKey ?? '').isNotEmpty || (apiSecret ?? '').isNotEmpty)) {
+      await settings.setApiKey('');
+      await settings.setApiSecret('');
+      apiKey = null;
+      apiSecret = null;
+    }
     final aiApiKey = await settings.getAiApiKey();
     final storedSymbols = settings.getSymbolList();
     final symbolText = normalizeSymbolList(
       storedSymbols == null || storedSymbols.isEmpty
           ? defaultSymbols
           : storedSymbols,
-      requiredSymbols: [triausdtSymbol],
+      requiredSymbols: [...coreTradingSymbols, truusdtSymbol],
     ).join(', ');
 
+    if (!mounted) return;
     setState(() {
       _apiKeyController.text = apiKey ?? '';
       _apiSecretController.text = apiSecret ?? '';
@@ -131,6 +151,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           settings.getAiShortBiasPrice()?.toString() ?? '';
       _savedAiLongBias = settings.getAiLongBiasPrice()?.toString() ?? '';
       _savedAiShortBias = settings.getAiShortBiasPrice()?.toString() ?? '';
+      _aiInvestmentUsdtController.text =
+          settings.getAiInvestmentUsdt()?.toString() ?? '';
+      _savedAiInvestmentUsdt = _aiInvestmentUsdtController.text;
+      _aiLeverageController.text = settings.getAiLeverage()?.toString() ?? '';
+      _savedAiLeverage = _aiLeverageController.text;
       _selectedAiProvider = aiProviderFromKey(settings.getAiProvider());
       _savedAiProvider = _selectedAiProvider;
       _selectedAiLongOrderType = ManualOrderType.values.byName(
@@ -141,8 +166,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         settings.getAiShortOrderType(),
       );
       _savedAiShortOrderType = _selectedAiShortOrderType;
+      _selectedAiTradeDirectionMode = aiTradeDirectionModeFromKey(
+        settings.getAiTradeDirectionMode(),
+      );
+      _savedAiTradeDirectionMode = _selectedAiTradeDirectionMode;
       _symbolListController.text = symbolText;
-      _isTestnet = settings.getIsTestnet();
+      _isTestnet = isTestnet;
       _savedIsTestnet = _isTestnet;
       _stopLossController.text = settings.getRiskStopLossPercent().toString();
       _takeProfitController.text = settings
@@ -180,6 +209,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     _aiModelController.dispose();
     _aiLongBiasController.dispose();
     _aiShortBiasController.dispose();
+    _aiInvestmentUsdtController.dispose();
+    _aiLeverageController.dispose();
     _symbolListController.dispose();
     _stopLossController.dispose();
     _takeProfitController.dispose();
@@ -202,7 +233,75 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   double? _parseDouble(String value) {
     final normalized = value.trim().replaceAll(',', '.');
-    return double.tryParse(normalized);
+    final parsed = double.tryParse(normalized);
+    return parsed?.isFinite == true ? parsed : null;
+  }
+
+  bool _validateAiConstraintFields() {
+    final investmentText = _aiInvestmentUsdtController.text.trim();
+    final leverageText = _aiLeverageController.text.trim();
+    final longBiasText = _aiLongBiasController.text.trim();
+    final shortBiasText = _aiShortBiasController.text.trim();
+    final aiInvestmentUsdt = investmentText.isEmpty
+        ? null
+        : _parseDouble(investmentText);
+    final aiLeverage = leverageText.isEmpty ? null : _parseInt(leverageText);
+    final longBias = longBiasText.isEmpty ? null : _parseDouble(longBiasText);
+    final shortBias = shortBiasText.isEmpty
+        ? null
+        : _parseDouble(shortBiasText);
+
+    if (investmentText.isNotEmpty &&
+        (aiInvestmentUsdt == null ||
+            aiInvestmentUsdt <= 0 ||
+            aiInvestmentUsdt > 1000000)) {
+      showAppToast(
+        context,
+        'AI max margin budget must be a finite value up to 1,000,000 USDT.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return false;
+    }
+
+    if (leverageText.isNotEmpty &&
+        (aiLeverage == null || aiLeverage < 1 || aiLeverage > 125)) {
+      showAppToast(
+        context,
+        'AI leverage must be an integer between 1 and 125.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return false;
+    }
+
+    if (longBiasText.isNotEmpty &&
+        (longBias == null || longBias <= 0 || longBias > 1e12)) {
+      showAppToast(
+        context,
+        'AI long-zone price must be a finite positive number.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return false;
+    }
+
+    if (shortBiasText.isNotEmpty &&
+        (shortBias == null || shortBias <= 0 || shortBias > 1e12)) {
+      showAppToast(
+        context,
+        'AI short-zone price must be a finite positive number.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return false;
+    }
+
+    return true;
   }
 
   RsiStrategyPreset? get _selectedRsiPreset {
@@ -232,18 +331,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   List<String> _parseSymbolList(String value) {
     return normalizeSymbolList(
       value.split(','),
-      requiredSymbols: [triausdtSymbol],
-    );
-  }
-
-  ManualOrderType _parseOrderType(String value) {
-    return ManualOrderType.values.firstWhere(
-      (type) => type.name == value,
-      orElse: () => ManualOrderType.limit,
+      requiredSymbols: [...coreTradingSymbols, truusdtSymbol],
     );
   }
 
   Future<void> _importAutomationAiConfig() async {
+    if (kIsWeb) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        'Automation file import is available in the desktop app.',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return;
+    }
     final settings = ref.read(settingsServiceProvider);
     final message = await settings.importAiConfigFromAutomation();
     await _loadSettings();
@@ -259,122 +362,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   Future<void> _saveSettings() async {
     final settings = ref.read(settingsServiceProvider);
-    final stopLoss = _parseDouble(_stopLossController.text);
-    final takeProfit = _parseDouble(_takeProfitController.text);
-    final tradeQuantity = _parseDouble(_tradeQuantityController.text);
-    final leverage = _parseInt(_leverageController.text);
-    final cooldownMinutes = _parseInt(_cooldownMinutesController.text);
-    final protectionPauseMinutes = _parseInt(
-      _protectionPauseMinutesController.text,
-    );
-    final maxConsecutiveLosses = _parseInt(
-      _maxConsecutiveLossesController.text,
-    );
-    final maxDrawdownPercent = _parseDouble(_maxDrawdownController.text);
     final symbols = _parseSymbolList(_symbolListController.text);
     final rsiPeriod = _parseInt(_rsiPeriodController.text);
     final rsiOverbought = _parseDouble(_rsiOverboughtController.text);
     final rsiOversold = _parseDouble(_rsiOversoldController.text);
-    final aiLongBias = _parseDouble(_aiLongBiasController.text);
-    final aiShortBias = _parseDouble(_aiShortBiasController.text);
-
-    if (stopLoss == null || stopLoss < 0) {
-      showAppToast(
-        context,
-        'Stop loss must be a valid number (0 or greater).',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
+    if (!_validateAiConstraintFields()) {
       return;
     }
-
-    if (takeProfit == null || takeProfit < 0) {
-      showAppToast(
-        context,
-        'Take profit must be a valid number (0 or greater).',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (tradeQuantity == null || tradeQuantity <= 0) {
-      showAppToast(
-        context,
-        'Trade quantity must be greater than 0.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (leverage == null || leverage < 1 || leverage > 125) {
-      showAppToast(
-        context,
-        'Leverage must be an integer between 1 and 125.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (cooldownMinutes == null || cooldownMinutes < 0) {
-      showAppToast(
-        context,
-        'Cooldown must be 0 or a positive whole number of minutes.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (protectionPauseMinutes == null || protectionPauseMinutes < 0) {
-      showAppToast(
-        context,
-        'Protection pause must be 0 or a positive whole number of minutes.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (maxConsecutiveLosses == null || maxConsecutiveLosses < 0) {
-      showAppToast(
-        context,
-        'Max consecutive losses must be 0 or a positive whole number.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if (maxDrawdownPercent == null || maxDrawdownPercent < 0) {
-      showAppToast(
-        context,
-        'Max drawdown must be 0 or a positive percentage.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
-      return;
-    }
-
-    if ((maxConsecutiveLosses > 0 || maxDrawdownPercent > 0) &&
-        protectionPauseMinutes == 0) {
-      showAppToast(
-        context,
-        'Set a protection pause above 0 minutes when loss-streak or drawdown locks are enabled.',
-        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
-        foregroundColor: Colors.white,
-        icon: Icons.error_outline,
-      );
+    if (_blockUnsafeWebLiveCredentials()) {
       return;
     }
 
@@ -433,43 +428,44 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       return;
     }
 
-    await _persistBinanceSettings(settings);
-    await _persistAiSettings(settings);
-    await settings.setSymbolList(symbols);
-    await settings.setRiskStopLossPercent(stopLoss);
-    await settings.setRiskTakeProfitPercent(takeProfit);
-    await settings.setRiskTradeQuantity(tradeQuantity);
-    await settings.setRiskLeverage(leverage);
-    await settings.setRiskCooldownMinutes(cooldownMinutes);
-    await settings.setRiskProtectionPauseMinutes(protectionPauseMinutes);
-    await settings.setRiskMaxConsecutiveLosses(maxConsecutiveLosses);
-    await settings.setRiskMaxDrawdownPercent(maxDrawdownPercent);
-    await settings.setRsiPeriod(rsiPeriod);
-    await settings.setRsiOverbought(rsiOverbought);
-    await settings.setRsiOversold(rsiOversold);
-
-    final currentStrategy = ref.read(currentStrategyProvider);
-    if (currentStrategy is RsiStrategy) {
-      await ref
-          .read(currentStrategyProvider.notifier)
-          .setMode(StrategyMode.algo, symbol: ref.read(selectedSymbolProvider));
-    } else if (currentStrategy is AiStrategy) {
-      final symbol = ref.read(selectedSymbolProvider);
-      await ref
-          .read(currentStrategyProvider.notifier)
-          .setMode(StrategyMode.ai, symbol: symbol);
+    final symbol = ref.read(selectedSymbolProvider);
+    await ref.read(currentStrategyReadyProvider.future);
+    final mode = ref.read(currentStrategyModeProvider);
+    if (!await _disarmRuntimeBeforeSettingsChange(
+      symbol: symbol,
+      reason: 'settings_changed',
+    )) {
+      return;
     }
 
-    if (mounted) {
+    try {
+      await _persistBinanceSettings(settings);
+      await _persistAiSettings(settings);
+      await settings.setSymbolList(symbols);
+      await settings.setRsiPeriod(rsiPeriod);
+      await settings.setRsiOverbought(rsiOverbought);
+      await settings.setRsiOversold(rsiOversold);
+      await _refreshRuntimeProviders(symbol: symbol, mode: mode);
+    } catch (error) {
+      if (!mounted) return;
       showAppToast(
         context,
-        'Settings saved successfully',
-        backgroundColor: AppColors.positive.withValues(alpha: 0.95),
+        'Settings could not be applied safely: $error',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
         foregroundColor: Colors.white,
-        icon: Icons.check_circle_outline,
+        icon: Icons.error_outline,
       );
-      _invalidateRuntimeProviders();
+      return;
     }
+
+    if (!mounted) return;
+    showAppToast(
+      context,
+      'Settings saved. Automation is disarmed; review the new configuration before starting again.',
+      backgroundColor: AppColors.positive.withValues(alpha: 0.95),
+      foregroundColor: Colors.white,
+      icon: Icons.check_circle_outline,
+    );
   }
 
   Future<void> _persistBinanceSettings(SettingsService settings) async {
@@ -486,6 +482,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _persistAiSettings(SettingsService settings) async {
     final aiLongBias = _parseDouble(_aiLongBiasController.text);
     final aiShortBias = _parseDouble(_aiShortBiasController.text);
+    final aiInvestmentUsdt = _aiInvestmentUsdtController.text.trim().isEmpty
+        ? null
+        : _parseDouble(_aiInvestmentUsdtController.text);
+    final aiLeverage = _aiLeverageController.text.trim().isEmpty
+        ? null
+        : _parseInt(_aiLeverageController.text);
     final aiApiKey = _aiApiKeyController.text.trim();
     final aiUrl = _aiUrlController.text.trim();
     final aiModel = _aiModelController.text.trim();
@@ -498,15 +500,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     await settings.setAiShortBiasPrice(aiShortBias);
     await settings.setAiLongOrderType(_selectedAiLongOrderType.name);
     await settings.setAiShortOrderType(_selectedAiShortOrderType.name);
+    await settings.setAiTradeDirectionMode(_selectedAiTradeDirectionMode.key);
+    await settings.setAiInvestmentUsdt(aiInvestmentUsdt);
+    await settings.setAiLeverage(aiLeverage);
 
     _savedAiApiKey = aiApiKey;
     _savedAiUrl = aiUrl;
     _savedAiModel = aiModel;
     _savedAiLongBias = _aiLongBiasController.text.trim();
     _savedAiShortBias = _aiShortBiasController.text.trim();
+    _savedAiInvestmentUsdt = _aiInvestmentUsdtController.text.trim();
+    _savedAiLeverage = _aiLeverageController.text.trim();
     _savedAiProvider = _selectedAiProvider;
     _savedAiLongOrderType = _selectedAiLongOrderType;
     _savedAiShortOrderType = _selectedAiShortOrderType;
+    _savedAiTradeDirectionMode = _selectedAiTradeDirectionMode;
   }
 
   bool get _hasUnsavedBinanceChanges {
@@ -521,18 +529,49 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _aiModelController.text.trim() != _savedAiModel ||
         _aiLongBiasController.text.trim() != _savedAiLongBias ||
         _aiShortBiasController.text.trim() != _savedAiShortBias ||
+        _aiInvestmentUsdtController.text.trim() != _savedAiInvestmentUsdt ||
+        _aiLeverageController.text.trim() != _savedAiLeverage ||
         _selectedAiProvider != _savedAiProvider ||
         _selectedAiLongOrderType != _savedAiLongOrderType ||
-        _selectedAiShortOrderType != _savedAiShortOrderType;
+        _selectedAiShortOrderType != _savedAiShortOrderType ||
+        _selectedAiTradeDirectionMode != _savedAiTradeDirectionMode;
   }
 
-  void _invalidateRuntimeProviders() {
-    final symbol = ref.read(selectedSymbolProvider);
+  Future<bool> _disarmRuntimeBeforeSettingsChange({
+    required String symbol,
+    required String reason,
+  }) async {
+    final result = await ref
+        .read(tradingRuntimeSafetyProvider)
+        .disarmBeforeRuntimeChange(symbol: symbol, reason: reason);
+    if (!result.canProceed) {
+      if (!mounted) return false;
+      showAppToast(
+        context,
+        'Settings were not applied because working iFutures entries could not be cancelled and reconciled: ${result.error}',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.security_outlined,
+        duration: const Duration(seconds: 6),
+      );
+      return false;
+    }
+    ref.read(isBotRunningProvider(symbol).notifier).state = false;
+    return mounted;
+  }
+
+  Future<void> _refreshRuntimeProviders({
+    required String symbol,
+    required StrategyMode mode,
+  }) async {
     ref.invalidate(binanceApiProvider);
     ref.invalidate(binanceWsProvider);
-    ref.invalidate(aiStrategyProvider);
+    ref.invalidate(aiStrategyProvider(symbol));
     ref.invalidate(riskSettingsProvider);
     ref.invalidate(symbolListProvider);
+    await ref
+        .read(currentStrategyProvider.notifier)
+        .setMode(mode, symbol: symbol, persist: false);
     ref.invalidate(tradingEngineProvider(symbol));
     ref.invalidate(connectionStatusProvider(symbol));
     ref.invalidate(binanceAccountStatusProvider(symbol));
@@ -540,13 +579,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _saveBinanceSettingsOnly() async {
+    if (_blockUnsafeWebLiveCredentials()) {
+      return;
+    }
+    final symbol = ref.read(selectedSymbolProvider);
+    await ref.read(currentStrategyReadyProvider.future);
+    final mode = ref.read(currentStrategyModeProvider);
+    if (!await _disarmRuntimeBeforeSettingsChange(
+      symbol: symbol,
+      reason: 'binance_settings_changed',
+    )) {
+      return;
+    }
     final settings = ref.read(settingsServiceProvider);
-    await _persistBinanceSettings(settings);
-    _invalidateRuntimeProviders();
+    try {
+      await _persistBinanceSettings(settings);
+      await _refreshRuntimeProviders(symbol: symbol, mode: mode);
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        'Binance settings could not be applied safely: $error',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return;
+    }
     if (!mounted) return;
     showAppToast(
       context,
-      'API keys saved locally. The running app will now use this ${_isTestnet ? 'demo' : 'live'} connection and key pair.',
+      'API keys saved locally for this ${_isTestnet ? 'demo' : 'live'} connection. Automation is disarmed for review.',
       backgroundColor: AppColors.positive.withValues(alpha: 0.95),
       foregroundColor: Colors.white,
       icon: Icons.verified_user_outlined,
@@ -554,13 +617,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   }
 
   Future<void> _saveAiSettingsOnly() async {
+    if (!_validateAiConstraintFields()) {
+      return;
+    }
+    final symbol = ref.read(selectedSymbolProvider);
+    await ref.read(currentStrategyReadyProvider.future);
+    final mode = ref.read(currentStrategyModeProvider);
+    if (!await _disarmRuntimeBeforeSettingsChange(
+      symbol: symbol,
+      reason: 'ai_settings_changed',
+    )) {
+      return;
+    }
     final settings = ref.read(settingsServiceProvider);
-    await _persistAiSettings(settings);
-    _invalidateRuntimeProviders();
+    try {
+      await _persistAiSettings(settings);
+      await _refreshRuntimeProviders(symbol: symbol, mode: mode);
+    } catch (error) {
+      if (!mounted) return;
+      showAppToast(
+        context,
+        'AI settings could not be applied safely: $error',
+        backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+        foregroundColor: Colors.white,
+        icon: Icons.error_outline,
+      );
+      return;
+    }
     if (!mounted) return;
     showAppToast(
       context,
-      'AI API settings saved locally. The running app will now use this AI provider configuration.',
+      'AI API settings saved locally and the active strategy was rebuilt. Automation is disarmed for review.',
       backgroundColor: AppColors.positive.withValues(alpha: 0.95),
       foregroundColor: Colors.white,
       icon: Icons.psychology_alt_outlined,
@@ -571,6 +658,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final apiKey = _apiKeyController.text.trim();
     final apiSecret = _apiSecretController.text.trim();
     final symbol = ref.read(selectedSymbolProvider);
+
+    if (_blockUnsafeWebLiveCredentials(updateCheckState: true)) {
+      return;
+    }
 
     if (apiKey.isEmpty || apiSecret.isEmpty) {
       setState(() {
@@ -603,31 +694,38 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         isTestnet: _isTestnet,
       );
 
-      String spotSummary = '';
-      try {
-        await api.syncServerTime(scope: BinanceApiScope.spot);
-        final spotAccountInfo = await api.getSpotAccountInfo();
-        Map<String, dynamic>? spotRestrictions;
+      Object? spotError;
+      String spotSummary;
+      if (_isTestnet) {
+        spotSummary = 'Spot access is not checked in Demo Connection mode.';
+      } else {
         try {
-          spotRestrictions = await api.getSpotApiRestrictions();
-        } catch (_) {}
-        spotSummary = _buildSpotAccessSummary(
-          spotAccountInfo,
-          spotRestrictions,
-        );
-      } catch (error) {
-        if (_isTestnet) {
-          spotSummary = 'Spot access is skipped in Demo Connection mode.';
-        } else {
-          rethrow;
+          await api.syncServerTime(scope: BinanceApiScope.spot);
+          final spotAccountInfo = await api.getSpotAccountInfo();
+          Map<String, dynamic>? spotRestrictions;
+          try {
+            spotRestrictions = await api.getSpotApiRestrictions();
+          } catch (_) {}
+          spotSummary = _buildSpotAccessSummary(
+            spotAccountInfo,
+            spotRestrictions,
+          );
+        } catch (error) {
+          spotError = error;
+          spotSummary = _friendlyBinanceConnectionError(
+            error,
+            capabilityLabel: 'optional Spot read access',
+          );
         }
       }
 
+      var futuresAccessVerified = false;
       try {
         await api.syncServerTime();
         final accountInfo = await api.getAccountInfo();
         final positions = await api.getPositionRisk(symbol: symbol);
         final trades = await api.getUserTrades(symbol: symbol, limit: 1);
+        futuresAccessVerified = true;
         final settings = ref.read(settingsServiceProvider);
 
         final totalWalletBalance = _asDouble(accountInfo['totalWalletBalance']);
@@ -641,67 +739,119 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             ? 'No recent $symbol fills were returned.'
             : 'Recent $symbol fills are accessible.';
 
-        final spotStatusPrefix = _isTestnet
-            ? 'Spot access check bypassed.'
-            : 'Spot read access verified.';
+        final spotAccessNote = _isTestnet
+            ? spotSummary
+            : spotError == null
+            ? 'Optional Spot read access also passed. $spotSummary'
+            : 'Optional Spot read access was unavailable, but it is not required for Futures. $spotSummary';
         final message =
-            '$spotStatusPrefix $spotSummary '
             '${_isTestnet ? 'Demo Futures connection' : 'Live Futures connection'} is active. '
             '${totalWalletBalance != null ? 'Wallet ${totalWalletBalance.toStringAsFixed(2)} USDT. ' : ''}'
             '${availableBalance != null ? 'Available ${availableBalance.toStringAsFixed(2)} USDT. ' : ''}'
             '${openPositionCount > 0 ? 'Open positions: $openPositionCount. ' : 'No open position for $symbol. '}'
-            '$lastTradeNote';
+            '$lastTradeNote $spotAccessNote';
 
+        await ref.read(currentStrategyReadyProvider.future);
+        final mode = ref.read(currentStrategyModeProvider);
+        if (!await _disarmRuntimeBeforeSettingsChange(
+          symbol: symbol,
+          reason: 'verified_binance_settings_changed',
+        )) {
+          if (!mounted) return;
+          setState(() {
+            _isTestingBinance = false;
+            _binanceCheckState = _BinanceCheckState.failure;
+            _binanceCheckMessage =
+                '$message Connection verified, but the settings were not applied because working orders could not be reconciled.';
+            _binanceCheckAt = DateTime.now();
+          });
+          return;
+        }
         await _persistBinanceSettings(settings);
-        _invalidateRuntimeProviders();
+        await _refreshRuntimeProviders(symbol: symbol, mode: mode);
 
+        if (!mounted) return;
         setState(() {
           _isTestingBinance = false;
           _binanceCheckState = _BinanceCheckState.success;
           _binanceCheckMessage = message;
-          _binanceCheckRawDetails = null;
+          _binanceCheckRawDetails = spotError == null
+              ? null
+              : _binanceRawDetails(spotError);
           _binanceCheckAt = DateTime.now();
         });
 
-        if (!mounted) return;
         showAppToast(
           context,
-          '${_isTestnet ? 'Demo Spot skipped. ' : 'Spot read access passed. '}${_isTestnet ? 'Demo Futures access passed.' : 'Live Futures access passed.'} The verified Binance settings have been saved and applied.',
+          '${_isTestnet
+              ? 'Demo Futures access passed. Spot is not required in Demo Connection. '
+              : spotError == null
+              ? 'Live Futures access passed. Optional Spot read access also passed. '
+              : 'Live Futures access passed. Optional Spot read access was unavailable and is not required. '}The verified Futures settings were saved; automation is disarmed for review.',
           backgroundColor: AppColors.positive.withValues(alpha: 0.95),
           foregroundColor: Colors.white,
           icon: Icons.check_circle_outline,
         );
       } catch (error) {
-        final spotStatusPrefix = _isTestnet
-            ? 'Spot access check bypassed.'
-            : 'Spot read access verified.';
+        if (futuresAccessVerified) {
+          if (!mounted) return;
+          final message =
+              'Futures access passed, but the verified settings could not be applied safely: $error';
+          setState(() {
+            _isTestingBinance = false;
+            _binanceCheckState = _BinanceCheckState.failure;
+            _binanceCheckMessage = message;
+            _binanceCheckRawDetails = _binanceRawDetails(error);
+            _binanceCheckAt = DateTime.now();
+          });
+          showAppToast(
+            context,
+            message,
+            backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+            foregroundColor: Colors.white,
+            icon: Icons.error_outline,
+          );
+          return;
+        }
+        final hasSpotReadOnlyAccess = !_isTestnet && spotError == null;
+        final spotAccessNote = _isTestnet
+            ? spotSummary
+            : hasSpotReadOnlyAccess
+            ? 'Optional Spot read access passed. $spotSummary'
+            : 'Optional Spot read access was also unavailable. $spotSummary';
         final message =
-            '$spotStatusPrefix $spotSummary ${_friendlyFuturesCapabilityError(error)}';
-        final settings = ref.read(settingsServiceProvider);
-        await _persistBinanceSettings(settings);
-        _invalidateRuntimeProviders();
+            '${_friendlyFuturesCapabilityError(error)} $spotAccessNote';
+        if (!mounted) return;
         setState(() {
           _isTestingBinance = false;
-          _binanceCheckState = _BinanceCheckState.limited;
+          _binanceCheckState = hasSpotReadOnlyAccess
+              ? _BinanceCheckState.limited
+              : _BinanceCheckState.failure;
           _binanceCheckMessage = message;
           _binanceCheckRawDetails = _binanceRawDetails(error);
           _binanceCheckAt = DateTime.now();
         });
 
-        if (!mounted) return;
         showAppToast(
           context,
-          '${_isTestnet ? 'Demo Spot skipped. ' : 'Spot read access passed, but '}${_isTestnet ? 'Demo Futures access' : 'Live Futures access'} is still unavailable for this key. The current values were saved and applied for read-only monitoring.',
-          backgroundColor: AppColors.warning.withValues(alpha: 0.95),
+          hasSpotReadOnlyAccess
+              ? 'Optional Spot read access passed, but Live Futures access is unavailable for this key. The current values were not saved or applied.'
+              : '${_isTestnet ? 'Demo Futures access is unavailable. Spot is not required in Demo Connection.' : 'Live Futures access is unavailable, and optional Spot read access was also unavailable.'} The values were not saved or applied.',
+          backgroundColor:
+              (hasSpotReadOnlyAccess ? AppColors.warning : AppColors.negative)
+                  .withValues(alpha: 0.95),
           foregroundColor: Colors.white,
-          icon: Icons.info_outline,
+          icon: hasSpotReadOnlyAccess
+              ? Icons.info_outline
+              : Icons.error_outline,
         );
       }
     } catch (error) {
       final message = _friendlyBinanceConnectionError(
         error,
-        capabilityLabel: 'spot read access',
+        capabilityLabel: 'the Binance access check',
       );
+      if (!mounted) return;
       setState(() {
         _isTestingBinance = false;
         _binanceCheckState = _BinanceCheckState.failure;
@@ -709,8 +859,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         _binanceCheckRawDetails = _binanceRawDetails(error);
         _binanceCheckAt = DateTime.now();
       });
-
-      if (!mounted) return;
       showAppToast(
         context,
         message,
@@ -721,7 +869,37 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  bool _blockUnsafeWebLiveCredentials({bool updateCheckState = false}) {
+    final hasCredentials =
+        _apiKeyController.text.trim().isNotEmpty ||
+        _apiSecretController.text.trim().isNotEmpty;
+    if (!kIsWeb || _isTestnet || !hasCredentials) {
+      return false;
+    }
+    const message =
+        'Live Binance credentials are blocked in the public web app because a browser cannot safely hold your API secret. Use Binance Demo here or configure Live Connection in the Windows desktop app.';
+    if (updateCheckState) {
+      setState(() {
+        _binanceCheckState = _BinanceCheckState.failure;
+        _binanceCheckMessage = message;
+        _binanceCheckAt = DateTime.now();
+      });
+    }
+    showAppToast(
+      context,
+      message,
+      backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+      foregroundColor: Colors.white,
+      icon: Icons.security_outlined,
+      duration: const Duration(seconds: 6),
+    );
+    return true;
+  }
+
   Future<void> _testAiConnection() async {
+    if (!_validateAiConstraintFields()) {
+      return;
+    }
     final symbol = ref.read(selectedSymbolProvider);
     final strategy = AiStrategy(
       apiUrl: _aiUrlController.text.trim(),
@@ -733,7 +911,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       shortBiasPrice: _parseDouble(_aiShortBiasController.text),
       longOrderType: _selectedAiLongOrderType,
       shortOrderType: _selectedAiShortOrderType,
-      leverage: _parseInt(_leverageController.text) ?? 1,
+      tradeDirectionMode: _selectedAiTradeDirectionMode,
+      leverage:
+          (_aiLeverageController.text.trim().isEmpty
+              ? null
+              : _parseInt(_aiLeverageController.text)) ??
+          (_parseInt(_leverageController.text) ?? 1),
+      maxInvestmentUsdt: _aiInvestmentUsdtController.text.trim().isEmpty
+          ? null
+          : _parseDouble(_aiInvestmentUsdtController.text),
       takeProfitPercent: _parseDouble(_takeProfitController.text) ?? 0,
       stopLossPercent: _parseDouble(_stopLossController.text) ?? 0,
     );
@@ -746,14 +932,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _aiCheckAt = null;
     });
 
+    var aiAccessVerified = false;
     try {
       final result = await strategy.verifyConnection();
       final checkedAt = result.checkedAt ?? DateTime.now();
+      if (!mounted) return;
 
       if (result.state == AiServiceState.active) {
+        aiAccessVerified = true;
+        await ref.read(currentStrategyReadyProvider.future);
+        final mode = ref.read(currentStrategyModeProvider);
+        if (!await _disarmRuntimeBeforeSettingsChange(
+          symbol: symbol,
+          reason: 'verified_ai_settings_changed',
+        )) {
+          if (!mounted) return;
+          setState(() {
+            _isTestingAi = false;
+            _aiCheckState = _AiCheckState.failure;
+            _aiCheckMessage =
+                'AI access passed, but the settings were not applied because working orders could not be reconciled.';
+            _aiCheckRawDetails = null;
+            _aiCheckAt = checkedAt;
+          });
+          return;
+        }
         final settings = ref.read(settingsServiceProvider);
         await _persistAiSettings(settings);
-        _invalidateRuntimeProviders();
+        await _refreshRuntimeProviders(symbol: symbol, mode: mode);
+        if (!mounted) return;
         setState(() {
           _isTestingAi = false;
           _aiCheckState = _AiCheckState.success;
@@ -761,10 +968,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _aiCheckRawDetails = null;
           _aiCheckAt = checkedAt;
         });
-        if (!mounted) return;
         showAppToast(
           context,
-          'AI API connection verified and applied.',
+          'AI API connection verified and applied. The active strategy was rebuilt and automation is disarmed for review.',
           backgroundColor: AppColors.positive.withValues(alpha: 0.95),
           foregroundColor: Colors.white,
           icon: Icons.check_circle_outline,
@@ -772,17 +978,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         return;
       }
 
-      final failedState = result.state == AiServiceState.notConfigured
-          ? _AiCheckState.failure
-          : _AiCheckState.failure;
       setState(() {
         _isTestingAi = false;
-        _aiCheckState = failedState;
+        _aiCheckState = _AiCheckState.failure;
         _aiCheckMessage = result.message;
         _aiCheckRawDetails = result.message;
         _aiCheckAt = checkedAt;
       });
-      if (!mounted) return;
       showAppToast(
         context,
         result.message ?? 'AI API verification failed.',
@@ -791,17 +993,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         icon: Icons.error_outline,
       );
     } catch (error) {
+      if (!mounted) return;
+      final message = aiAccessVerified
+          ? 'AI access passed, but the verified settings could not be applied safely: $error'
+          : 'AI API verification failed: $error';
       setState(() {
         _isTestingAi = false;
         _aiCheckState = _AiCheckState.failure;
-        _aiCheckMessage = 'AI API verification failed: $error';
+        _aiCheckMessage = message;
         _aiCheckRawDetails = '$error';
         _aiCheckAt = DateTime.now();
       });
-      if (!mounted) return;
       showAppToast(
         context,
-        'AI API verification failed: $error',
+        message,
         backgroundColor: AppColors.negative.withValues(alpha: 0.95),
         foregroundColor: Colors.white,
         icon: Icons.error_outline,
@@ -811,8 +1016,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
 
   double? _asDouble(Object? value) {
     if (value == null) return null;
-    if (value is num) return value.toDouble();
-    return double.tryParse(value.toString());
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value.toString());
+    return parsed?.isFinite == true ? parsed : null;
   }
 
   int _countFundedSpotAssets(Map<String, dynamic> spotAccountInfo) {
@@ -1081,8 +1288,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _InfoCallout(
                   title: 'Connection Target',
                   body: _isTestnet
-                      ? 'Demo Connection uses Binance Futures testnet on testnet.binancefuture.com.'
-                      : 'Live Connection uses Binance Futures live on fapi.binance.com and checks Spot read access first.',
+                      ? 'Demo Connection uses Binance Futures demo on demo-fapi.binance.com.'
+                      : 'Live Connection uses Binance Futures live on fapi.binance.com. Futures access is required; Spot read access is checked separately and is optional.',
                   accentColor: _isTestnet
                       ? AppColors.glowAmber
                       : AppColors.glowCyan,
@@ -1179,9 +1386,13 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   runSpacing: 10,
                   children: [
                     ChoiceChip(
-                      label: const Text('Live Connection'),
+                      label: Text(
+                        kIsWeb ? 'Live: Desktop Only' : 'Live Connection',
+                      ),
                       selected: !_isTestnet,
-                      onSelected: (_) => setState(() => _isTestnet = false),
+                      onSelected: kIsWeb
+                          ? null
+                          : (_) => setState(() => _isTestnet = false),
                     ),
                     ChoiceChip(
                       label: const Text('Demo Connection'),
@@ -1196,7 +1407,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   child: Text(
                     _isTestnet
                         ? 'Demo Connection uses Binance Futures testnet. It changes the target only; access still needs to be verified below.'
-                        : 'Live Connection uses your real Binance account. It changes the target only; access still needs to be verified below.',
+                        : (kIsWeb
+                              ? 'Public web safety mode will not use or verify live Binance credentials, and live credential changes cannot be saved here. Use the Windows desktop app for authenticated live access.'
+                              : 'Live Connection uses your real Binance account. It changes the target only; access still needs to be verified below.'),
                     style: TextStyle(
                       color: AppColors.textSecondary,
                       fontSize: 12,
@@ -1241,7 +1454,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsSection(
             title: 'AI Strategy Configuration',
             subtitle:
-                'Choose the AI provider, import local automation credentials, and define the price zones AI should respect.',
+                'Connect the AI provider here. Live trader rules like side, leverage, and margin budget are now controlled from the dashboard desk.',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -1280,8 +1493,24 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 _InfoCallout(
                   title: 'AI Target',
                   body:
-                      '${_selectedAiProvider.label} is the active AI provider. Verify & Apply sends a small live request so the app can confirm the URL, model, and API key before using AI mode.',
+                      '${_selectedAiProvider.label} is the active AI provider. Verify & Apply sends a small live request so the app can confirm the URL, model, API key, and trader constraints before using AI mode.',
                   accentColor: AppColors.glowCyan,
+                ),
+                if (kIsWeb) ...[
+                  const SizedBox(height: 12),
+                  const _InfoCallout(
+                    title: 'Browser API-Key Warning',
+                    body:
+                        'AI provider keys entered in this public web app are sent from and stored on this browser. They cannot be kept like a server-side secret. Prefer the desktop app; otherwise use a restricted, revocable key with a strict spend limit.',
+                    accentColor: AppColors.negative,
+                  ),
+                ],
+                const SizedBox(height: 12),
+                const _InfoCallout(
+                  title: 'Dashboard Rules',
+                  body:
+                      'Use the AI Trade Rules strip at the top of the dashboard to set Long Only, Short Only, leverage, and USDT margin budget. Settings now focuses on provider connectivity and advanced behavior.',
+                  accentColor: AppColors.warning,
                 ),
                 if (aiStatus.hasValue &&
                     aiStatus.valueOrNull?.message != null) ...[
@@ -1368,9 +1597,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: _importAutomationAiConfig,
+                        onPressed: kIsWeb ? null : _importAutomationAiConfig,
                         icon: const Icon(Icons.download_outlined),
-                        label: const Text('IMPORT AUTOMATION'),
+                        label: Text(
+                          kIsWeb ? 'DESKTOP ONLY' : 'IMPORT AUTOMATION',
+                        ),
                       ),
                     ),
                   ],
@@ -1473,7 +1704,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
                 const SizedBox(height: 10),
                 const Text(
-                  'AI mode uses these zones as guidance. Stop loss, take profit, and leverage come from the Risk Management section below, and AI can scale the configured max quantity down when the setup looks weaker.',
+                  'Provider keys and advanced AI behavior live here. Trading side, leverage, and budget now live on the dashboard so the trader can change them without leaving the market view.',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,
@@ -1586,132 +1817,25 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           _SettingsSection(
             title: 'Symbols',
             subtitle:
-                'Comma-separated list of tradable symbols. TRIAUSDT is included by default.',
+                'Comma-separated Futures symbols. ARIAUSDT, TRIAUSDT, SIRENUSDT, BTCUSDT, and TRUUSDT are always included.',
             child: TextField(
               controller: _symbolListController,
               decoration: const InputDecoration(
-                labelText: 'Symbols (e.g., BTCUSDT, ETHUSDT, TRIAUSDT)',
+                labelText:
+                    'Symbols (e.g., ARIAUSDT, TRIAUSDT, SIRENUSDT, BTCUSDT)',
               ),
             ),
           ),
           const SizedBox(height: 16),
           _SettingsSection(
-            title: 'Risk Management',
+            title: 'Trading Controls',
             subtitle:
-                'Percent-based stops, fixed position sizing, and auto-entry protections. The dashboard converts this quantity into estimated USDT exposure and margin.',
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                TextField(
-                  controller: _stopLossController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(labelText: 'Stop Loss (%)'),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _takeProfitController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Take Profit (%)',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _tradeQuantityController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: const InputDecoration(
-                    labelText: 'Trade Quantity (base units)',
-                  ),
-                ),
-                const SizedBox(height: 16),
-                TextField(
-                  controller: _leverageController,
-                  keyboardType: TextInputType.number,
-                  decoration: const InputDecoration(labelText: 'Leverage (x)'),
-                ),
-                const SizedBox(height: 18),
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.surfaceAlt,
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: AppColors.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            color: AppColors.glowAmber,
-                            size: 18,
-                          ),
-                          SizedBox(width: 8),
-                          Text(
-                            'Protection Engine',
-                            style: TextStyle(
-                              color: AppColors.textPrimary,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      const Text(
-                        'Set any field to 0 to disable it. Cooldown pauses new auto entries after an exit. Loss-streak and drawdown locks pause auto entries for the configured protection window.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                          height: 1.4,
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _cooldownMinutesController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Cooldown After Exit (minutes)',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _protectionPauseMinutesController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Protection Pause Window (minutes)',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _maxConsecutiveLossesController,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Max Consecutive Losses',
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-                      TextField(
-                        controller: _maxDrawdownController,
-                        keyboardType: const TextInputType.numberWithOptions(
-                          decimal: true,
-                        ),
-                        decoration: const InputDecoration(
-                          labelText: 'Max Realized Drawdown (%)',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
+                'Risk, leverage, sizing, and protection rules now live on the dashboard trading desk beside the live chart.',
+            child: const _InfoCallout(
+              title: 'Moved To Dashboard',
+              body:
+                  'Open the dashboard to control stop loss, take profit, quantity, leverage, cooldown, and protection rules. Keeping them on the desk makes START AUTO, waiting states, and live chart decisions easier to read together.',
+              accentColor: AppColors.glowAmber,
             ),
           ),
           const SizedBox(height: 20),
@@ -1721,7 +1845,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 Expanded(
                   child: ElevatedButton(
                     onPressed: _saveSettings,
-                    child: const Text('SAVE ALL SETTINGS'),
+                    child: const Text('SAVE SETTINGS'),
                   ),
                 ),
               ],

@@ -1,17 +1,72 @@
 # TODO
 
-Last updated: 2026-04-02
+Last updated: 2026-07-14
 
-## Now
-- [ ] Portfolio analytics dashboard.
-- [ ] AI-to-manual ticket prefills so the latest plan can be reviewed and executed faster.
+## Priority Legend
+- `P0` Critical reliability/safety and release readiness.
+- `P1` High-impact feature work for near-term roadmap.
+- `P2` Important quality, scalability, and UX improvements.
+- `P3` Nice-to-have enhancements.
 
-## Next
-- [ ] Multi-exchange support (Binance + Coinbase).
-- [ ] AI confidence backtesting and scorecards.
-- [ ] Add a public web dashboard mode with clearer browser-only safety messaging.
+## Now (Active Sprint)
+- [ ] `P1` AI confidence backtesting and scorecards.
+  - Persist AI confidence vs realized outcome metrics per symbol and regime.
+  - Add dashboard scorecard view for confidence calibration (hit rate, avg R, drawdown impact).
+  - Add regression tests around confidence scoring math.
+- [ ] `P1` Partial take-profit and staged exits.
+  - Add staged TP model shared by AI and ALGO plans.
+  - Update execution flow to support laddered exits and partial close accounting.
+  - Validate trade-history and CSV export include staged fills correctly.
+
+## Next (Planned)
+- [ ] `P1` Explicit Futures margin-mode preflight and control.
+  - Show isolated vs cross margin per symbol before enabling execution.
+  - Add an opt-in isolated-margin action with exchange-state and open-order checks; never change account risk silently.
+  - Add integration tests for already-isolated, already-cross, and exchange-rejection states.
+- [ ] `P1` Multi-exchange abstraction (Binance + Coinbase).
+  - Introduce exchange adapter interfaces and shared order/account models.
+  - Keep Binance as default, then add Coinbase read-only and trade flow parity.
+  - Add provider/service tests for exchange selection and fallback behavior.
+- [ ] `P2` Logging and secret-redaction hardening.
+  - Replace direct prints in exchange/engine flows with structured logging helpers.
+  - Ensure API keys/signatures are always redacted.
+  - Add tests for redaction paths in request/response logging.
+- [ ] `P2` Engine modularization.
+  - Split `trading_engine.dart` responsibilities into orchestration, execution, protections, and sync services.
+  - Preserve existing behavior with parity tests before/after extraction.
+- [ ] `P2` Settings portability and default path cleanup.
+  - Remove machine-specific default automation path assumptions.
+  - Add cross-platform defaults and validation messages.
+- [ ] `P2` Error-observability improvements.
+  - Replace broad silent catches with typed failures and user-safe status feedback.
+  - Add actionable diagnostics in strategy console for recoverable errors.
+
+## Later
+- [ ] `P3` Expanded gallery timeline with per-release screenshots for each tagged version.
+- [ ] `P3` Architecture docs for provider graph, strategy lifecycle, and execution flow.
+- [ ] `P3` CI expansion with web smoke test against production build artifacts.
 
 ## Done
+- [x] Public web safety mode blocks real-money mutations, refuses and purges production credentials, and labels Demo, Paper/Monitor, and Real-Money states explicitly.
+- [x] Desktop-only automation import and CSV export are disabled in browser builds.
+- [x] Installation-scoped order ownership, Windows single-instance enforcement, ambiguous-entry quarantine, and serialized STOP/submission handling.
+- [x] Stop-first protection verification with emergency flattening when confirmed stop coverage cannot be established.
+- [x] Futures-authoritative credential verification with optional Spot read-only diagnostics.
+- [x] Recorded-exit-fee-adjusted analytics plus honestly labeled gross close-price backtests.
+- [x] Pages deployment now requires passing analysis and tests before build/deploy.
+- [x] ARIAUSDT-first core market set with required TRIAUSDT, SIRENUSDT, and BTCUSDT while retaining TRUUSDT.
+- [x] One-click guarded Long/Short entry with Smart Maker, market option, timed arming, and gross `$5 TP / $5 SL` preset.
+- [x] Binance Algo Order migration for conditional TP/SL plus separate normal/algo reconciliation.
+- [x] User-data fill events, bot-order ownership, symbol handoff disarming, and ambiguous-order response reconciliation.
+- [x] AI finite-number defenses and a 60% minimum confidence floor for automatic execution.
+- [x] Dedicated order-book execution card with spread, imbalance, sweep slippage, and AI execution hint visibility.
+- [x] Live liquidation price display in current position and portfolio snapshots from Binance position sync.
+- [x] Added `TRUUSDT` to the required/default symbol list so it always stays selectable.
+- [x] AI settings now let the trader force long-only, short-only, or auto direction plus a fixed leverage and max USDT margin budget.
+- [x] Current position snapshot embedded in portfolio analytics with live side, entry, last price, size, exposure, and unrealized PnL.
+- [x] Per-symbol portfolio contribution and exposure breakdown with a bounded inner scroll inside the portfolio analytics card.
+- [x] Portfolio analytics dashboard with wallet, free margin, tracked fills, realized account performance, and AI posture context.
+- [x] AI-to-manual ticket prefills so the latest plan can be reviewed and executed faster.
 - [x] GitHub Pages workflow for free public Flutter Web hosting on `getuser-shivam.github.io/iFutures`.
 - [x] AI decision feedback memory with outcome review and confidence calibration.
 - [x] Order-book trend history so AI can compare the last several minutes of spread, imbalance, and sweep cost.

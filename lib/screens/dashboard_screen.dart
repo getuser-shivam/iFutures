@@ -1,26 +1,30 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/trading_provider.dart';
-import '../trading/trading_engine.dart';
 import '../constants/symbols.dart';
 import '../models/ai_service_status.dart';
 import '../models/binance_account_status.dart';
-import '../models/connection_status.dart';
 import '../models/strategy_mode.dart';
 import '../widgets/common/app_panel.dart';
-import '../widgets/common/action_button.dart';
+import '../widgets/common/app_toast.dart';
 import '../widgets/common/status_pill.dart';
 import '../widgets/dashboard/market_analysis_card.dart';
 import '../widgets/dashboard/daily_performance_card.dart';
+import '../widgets/dashboard/ai_rule_bar.dart';
+import '../widgets/dashboard/manual_order_ticket.dart';
 import '../widgets/dashboard/open_position_card.dart';
+import '../widgets/dashboard/order_book_execution_card.dart';
+import '../widgets/dashboard/one_click_trade_card.dart';
 import '../widgets/dashboard/price_alert_listener.dart';
 import '../widgets/dashboard/price_alerts_card.dart';
 import '../widgets/dashboard/price_chart.dart';
 import '../widgets/dashboard/strategy_console_card.dart';
 import '../widgets/dashboard/trade_history.dart';
 import '../widgets/dashboard/performance_metrics.dart';
+import '../widgets/dashboard/portfolio_analytics_card.dart';
 import '../widgets/dashboard/risk_summary_card.dart';
 import '../theme/app_theme.dart';
+import '../trading/strategy.dart';
 import 'settings_screen.dart';
 import 'gallery_screen.dart';
 
@@ -31,16 +35,17 @@ class DashboardScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final symbol = ref.watch(selectedSymbolProvider);
     final ticker = ref.watch(tickerStreamProvider(symbol));
-    final isRunning = ref.watch(isBotRunningProvider(symbol));
-    final engineAsync = ref.watch(tradingEngineProvider(symbol));
     final settingsInit = ref.watch(settingsInitProvider);
-    final connectionStatus = ref.watch(connectionStatusProvider(symbol));
     final binanceAccountStatus = ref.watch(
       binanceAccountStatusProvider(symbol),
     );
     final aiServiceStatus = ref.watch(aiServiceStatusProvider(symbol));
     final currentMode = ref.watch(currentStrategyModeProvider);
     final currentStrategy = ref.watch(currentStrategyProvider);
+    final plan = ref.watch(decisionPlanStreamProvider(symbol)).valueOrNull;
+    final isRunning = ref.watch(isBotRunningProvider(symbol));
+    final openOrders =
+        ref.watch(openOrderStreamProvider(symbol)).valueOrNull ?? const [];
     final symbolsAsync = ref.watch(symbolListProvider);
     final symbols = symbolsAsync.maybeWhen(
       data: (data) => data,
@@ -85,6 +90,9 @@ class DashboardScreen extends ConsumerWidget {
                 binanceAccountStatus,
                 currentMode,
                 currentStrategy?.name,
+                plan,
+                isRunning,
+                openOrders.length,
               ),
             ),
           ),
@@ -107,19 +115,40 @@ class DashboardScreen extends ConsumerWidget {
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
                   sliver: SliverToBoxAdapter(
-                    child: _buildStrategyWorkspaceHint(
-                      context,
-                      currentMode,
-                      currentStrategy?.name,
-                      symbol,
+                    child: OneClickTradeCard(
+                      key: ValueKey('one-click-$symbol'),
+                      symbol: symbol,
                     ),
                   ),
                 ),
-                SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(
-                    child: StrategyConsoleCard(symbol: symbol),
+                if (currentMode == StrategyMode.ai)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    sliver: SliverToBoxAdapter(
+                      child: AiRuleBar(symbol: symbol),
+                    ),
                   ),
+                if (currentMode == StrategyMode.manual)
+                  SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    sliver: SliverToBoxAdapter(
+                      child: ManualOrderTicket(
+                        key: ValueKey('manual-ticket-$symbol'),
+                        symbol: symbol,
+                      ),
+                    ),
+                  ),
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(
+                    20,
+                    currentMode == StrategyMode.manual ||
+                            currentMode == StrategyMode.ai
+                        ? 8
+                        : 20,
+                    20,
+                    8,
+                  ),
+                  sliver: const SliverToBoxAdapter(child: RiskSummaryCard()),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
@@ -156,7 +185,7 @@ class DashboardScreen extends ConsumerWidget {
                                   border: Border.all(color: AppColors.border),
                                 ),
                                 child: const Text(
-                                  'Last 50 candles',
+                                  'Advanced live chart',
                                   style: TextStyle(
                                     color: AppColors.textSecondary,
                                     fontSize: 11,
@@ -167,12 +196,18 @@ class DashboardScreen extends ConsumerWidget {
                           ),
                           const SizedBox(height: 12),
                           SizedBox(
-                            height: 260,
+                            height: 420,
                             child: PriceChart(symbol: symbol),
                           ),
                         ],
                       ),
                     ),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: StrategyConsoleCard(symbol: symbol),
                   ),
                 ),
                 SliverPadding(
@@ -192,7 +227,15 @@ class DashboardScreen extends ConsumerWidget {
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
-                  sliver: SliverToBoxAdapter(child: RiskSummaryCard()),
+                  sliver: SliverToBoxAdapter(
+                    child: OrderBookExecutionCard(symbol: symbol),
+                  ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                  sliver: SliverToBoxAdapter(
+                    child: PortfolioAnalyticsCard(symbol: symbol),
+                  ),
                 ),
                 SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
@@ -219,76 +262,8 @@ class DashboardScreen extends ConsumerWidget {
                   ),
                 ),
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-                  sliver: SliverToBoxAdapter(
-                    child: _buildStatusRow(
-                      isRunning,
-                      engineAsync,
-                      connectionStatus,
-                      aiServiceStatus,
-                      binanceAccountStatus,
-                    ),
-                  ),
-                ),
-                SliverPadding(
                   padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-                  sliver: SliverToBoxAdapter(
-                    child: AppPanel(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: ActionButton(
-                              label: 'START BOT',
-                              icon: Icons.play_arrow,
-                              color: AppColors.positive,
-                              onPressed: isRunning || engineAsync.isLoading
-                                  ? null
-                                  : () async {
-                                      if (engineAsync
-                                          is AsyncData<TradingEngine>) {
-                                        final engine = engineAsync.value;
-                                        ref
-                                                .read(
-                                                  isBotRunningProvider(
-                                                    symbol,
-                                                  ).notifier,
-                                                )
-                                                .state =
-                                            true;
-                                        await engine.enableTrading();
-                                      }
-                                    },
-                            ),
-                          ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: ActionButton(
-                              label: 'STOP BOT',
-                              icon: Icons.stop_circle_outlined,
-                              color: AppColors.negative,
-                              onPressed: !isRunning || engineAsync.isLoading
-                                  ? null
-                                  : () {
-                                      if (engineAsync
-                                          is AsyncData<TradingEngine>) {
-                                        final engine = engineAsync.value;
-                                        ref
-                                                .read(
-                                                  isBotRunningProvider(
-                                                    symbol,
-                                                  ).notifier,
-                                                )
-                                                .state =
-                                            false;
-                                        engine.disableTrading();
-                                      }
-                                    },
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
+                  sliver: const SliverToBoxAdapter(child: SizedBox(height: 4)),
                 ),
               ],
             ),
@@ -308,6 +283,9 @@ class DashboardScreen extends ConsumerWidget {
     AsyncValue<BinanceAccountStatus> binanceAccountStatus,
     StrategyMode currentMode,
     String? strategyName,
+    StrategyTradePlan? plan,
+    bool isRunning,
+    int openOrderCount,
   ) {
     final textTheme = Theme.of(context).textTheme;
     final actions = Row(
@@ -316,9 +294,49 @@ class DashboardScreen extends ConsumerWidget {
         _SymbolDropdown(
           value: symbol,
           symbols: symbols,
-          onChanged: (value) {
-            if (value == null) return;
-            ref.read(selectedSymbolProvider.notifier).setSymbol(value);
+          onChanged: (value) async {
+            if (value == null || value == symbol) return;
+            final disarm = await ref
+                .read(tradingRuntimeSafetyProvider)
+                .disarmBeforeRuntimeChange(
+                  symbol: symbol,
+                  reason: 'symbol_switch',
+                );
+            if (!disarm.canProceed) {
+              ref.read(isBotRunningProvider(symbol).notifier).state = false;
+              if (context.mounted) {
+                showAppToast(
+                  context,
+                  'Symbol switch blocked: working $symbol entries could not be confirmed cancelled. Check Binance orders and retry. (${disarm.error})',
+                  backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+                  foregroundColor: Colors.white,
+                  icon: Icons.gpp_bad_outlined,
+                  duration: const Duration(seconds: 5),
+                );
+              }
+              return;
+            }
+            ref.read(isBotRunningProvider(symbol).notifier).state = false;
+            try {
+              await ref.read(selectedSymbolProvider.notifier).setSymbol(value);
+            } catch (error) {
+              try {
+                await ref
+                    .read(selectedSymbolProvider.notifier)
+                    .setSymbol(symbol);
+              } catch (_) {
+                // The in-memory selection is still restored by setSymbol.
+              }
+              if (context.mounted) {
+                showAppToast(
+                  context,
+                  'The symbol was not changed because it could not be saved: $error',
+                  backgroundColor: AppColors.negative.withValues(alpha: 0.95),
+                  foregroundColor: Colors.white,
+                  icon: Icons.error_outline,
+                );
+              }
+            }
           },
         ),
         const SizedBox(width: 8),
@@ -428,6 +446,20 @@ class DashboardScreen extends ConsumerWidget {
               label: 'Mode: ${currentMode.label}',
               color: _modeColor(currentMode),
             ),
+            StatusPill(
+              label: _tradingHeaderLabel(
+                currentMode: currentMode,
+                isRunning: isRunning,
+                plan: plan,
+                openOrderCount: openOrderCount,
+              ),
+              color: _tradingHeaderColor(
+                currentMode: currentMode,
+                isRunning: isRunning,
+                plan: plan,
+                openOrderCount: openOrderCount,
+              ),
+            ),
             _buildBinanceBadge(binanceAccountStatus, compact: true),
             if (strategyName != null && strategyName.trim().isNotEmpty)
               Text(
@@ -501,171 +533,6 @@ class DashboardScreen extends ConsumerWidget {
     return '$strategyName: $suffix';
   }
 
-  Widget _buildStrategyWorkspaceHint(
-    BuildContext context,
-    StrategyMode currentMode,
-    String? strategyName,
-    String symbol,
-  ) {
-    return AppPanel(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            alignment: WrapAlignment.spaceBetween,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              const Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.tune, color: AppColors.textSecondary, size: 20),
-                  SizedBox(width: 8),
-                  Text(
-                    'Strategy Workspace',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                ],
-              ),
-              TextButton.icon(
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                },
-                icon: const Icon(Icons.settings_outlined, size: 16),
-                label: const Text('OPEN SETTINGS'),
-                style: TextButton.styleFrom(
-                  foregroundColor: AppColors.glowCyan,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Mode selection, manual tickets, and backtesting now live in Settings. The dashboard keeps the live strategy terminal visible for monitoring and troubleshooting.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 8,
-            runSpacing: 8,
-            children: [
-              StatusPill(
-                label: 'Active: ${currentMode.label}',
-                color: _modeColor(currentMode),
-              ),
-              if (strategyName != null && strategyName.trim().isNotEmpty)
-                StatusPill(label: strategyName, color: AppColors.glowCyan),
-              StatusPill(label: 'Symbol: $symbol', color: AppColors.glowAmber),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            _dashboardHintForMode(currentMode),
-            style: const TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11,
-              height: 1.4,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _formatRetryDelay(int delayMs) {
-    if (delayMs < 1000) {
-      return '${delayMs}ms';
-    }
-
-    final seconds = (delayMs / 1000).ceil();
-    if (seconds < 60) {
-      return '${seconds}s';
-    }
-
-    final minutes = (seconds / 60).ceil();
-    return '${minutes}m';
-  }
-
-  Widget _buildStatusRow(
-    bool isRunning,
-    AsyncValue<TradingEngine> engineAsync,
-    AsyncValue<ConnectionStatus> connectionStatus,
-    AsyncValue<AiServiceStatus> aiServiceStatus,
-    AsyncValue<BinanceAccountStatus> binanceAccountStatus,
-  ) {
-    return Wrap(
-      spacing: 12,
-      runSpacing: 8,
-      children: [
-        StatusPill(
-          label: isRunning ? 'Bot: Running' : 'Bot: Stopped',
-          color: isRunning ? AppColors.positive : AppColors.negative,
-        ),
-        engineAsync.when(
-          data: (_) => const StatusPill(
-            label: 'Engine: Ready',
-            color: AppColors.positive,
-          ),
-          loading: () => const StatusPill(
-            label: 'Engine: Loading...',
-            color: AppColors.warning,
-          ),
-          error: (e, _) => const StatusPill(
-            label: 'Engine: Error',
-            color: AppColors.negative,
-          ),
-        ),
-        _buildAiBadge(aiServiceStatus),
-        _buildBinanceBadge(binanceAccountStatus),
-        _buildConnectionBadge(connectionStatus),
-      ],
-    );
-  }
-
-  Widget _buildAiBadge(
-    AsyncValue<AiServiceStatus> status, {
-    bool compact = false,
-  }) {
-    return status.when(
-      data: (data) {
-        return switch (data.state) {
-          AiServiceState.notConfigured => StatusPill(
-            label: compact ? 'AI API: Not Set' : 'AI API: Not Configured',
-            color: AppColors.warning,
-          ),
-          AiServiceState.checking => StatusPill(
-            label: compact ? 'AI API: Checking' : 'AI API: Checking',
-            color: AppColors.glowAmber,
-          ),
-          AiServiceState.active => StatusPill(
-            label: compact ? 'AI API: Active' : 'AI API: Active',
-            color: AppColors.positive,
-          ),
-          AiServiceState.attentionRequired => StatusPill(
-            label: compact ? 'AI API: Attention' : 'AI API: Attention',
-            color: AppColors.negative,
-          ),
-        };
-      },
-      loading: () => const StatusPill(
-        label: 'AI API: Checking',
-        color: AppColors.glowAmber,
-      ),
-      error: (e, _) =>
-          const StatusPill(label: 'AI API: Error', color: AppColors.negative),
-    );
-  }
-
   Widget _buildBinanceBadge(
     AsyncValue<BinanceAccountStatus> status, {
     bool compact = false,
@@ -675,23 +542,25 @@ class DashboardScreen extends ConsumerWidget {
         final prefix = data.isTestnet ? 'Binance Demo' : 'Binance Live';
         return switch (data.state) {
           BinanceAccountState.notConfigured => StatusPill(
-            label: compact ? 'Binance: Not Set' : '$prefix: Not Configured',
+            label: '$prefix: Not Configured',
             color: AppColors.warning,
           ),
           BinanceAccountState.checking => StatusPill(
-            label: compact ? 'Binance: Checking' : '$prefix: Checking',
+            label: '$prefix: Checking',
             color: AppColors.glowAmber,
           ),
           BinanceAccountState.active => StatusPill(
-            label: compact ? 'Binance: Active' : '$prefix: Active',
-            color: AppColors.positive,
+            label: data.isTestnet
+                ? 'Binance Demo: Active'
+                : 'Binance Live: REAL MONEY',
+            color: data.isTestnet ? AppColors.glowAmber : AppColors.negative,
           ),
           BinanceAccountState.limited => StatusPill(
-            label: compact ? 'Binance: Read Only' : '$prefix: Read Only',
+            label: '$prefix: Read Only',
             color: AppColors.warning,
           ),
           BinanceAccountState.attentionRequired => StatusPill(
-            label: compact ? 'Binance: Attention' : '$prefix: Attention',
+            label: '$prefix: Attention',
             color: AppColors.negative,
           ),
         };
@@ -701,57 +570,7 @@ class DashboardScreen extends ConsumerWidget {
         color: AppColors.glowAmber,
       ),
       error: (e, _) =>
-          StatusPill(label: 'Binance: Error', color: AppColors.negative),
-    );
-  }
-
-  Widget _buildConnectionBadge(AsyncValue<ConnectionStatus> status) {
-    return status.when(
-      data: (data) {
-        final ageSeconds = data.lastMessageAt == null
-            ? null
-            : DateTime.now().difference(data.lastMessageAt!).inSeconds;
-        final latency = data.latencyMs != null ? '${data.latencyMs}ms' : '--';
-
-        switch (data.state) {
-          case MarketConnectionState.connecting:
-            return const StatusPill(
-              label: 'Market: Connecting',
-              color: AppColors.glowAmber,
-            );
-          case MarketConnectionState.connected:
-            return StatusPill(
-              label: 'Market: Live | $latency',
-              color: AppColors.glowCyan,
-            );
-          case MarketConnectionState.stale:
-            return StatusPill(
-              label: 'Market: Slow | ${ageSeconds ?? '-'}s',
-              color: AppColors.warning,
-            );
-          case MarketConnectionState.reconnecting:
-            final delay = data.retryDelayMs == null
-                ? null
-                : _formatRetryDelay(data.retryDelayMs!);
-            final attempt = data.retryAttempt ?? 1;
-            final suffix = delay == null ? '' : ' in $delay';
-            return StatusPill(
-              label: 'Market: Reconnecting #$attempt$suffix',
-              color: AppColors.warning,
-            );
-          case MarketConnectionState.disconnected:
-            return const StatusPill(
-              label: 'Market: Offline',
-              color: AppColors.negative,
-            );
-        }
-      },
-      loading: () => const StatusPill(
-        label: 'Market: Connecting',
-        color: AppColors.glowAmber,
-      ),
-      error: (e, _) =>
-          const StatusPill(label: 'Market: Error', color: AppColors.negative),
+          const StatusPill(label: 'Binance: Error', color: AppColors.negative),
     );
   }
 
@@ -763,14 +582,51 @@ class DashboardScreen extends ConsumerWidget {
     };
   }
 
-  static String _dashboardHintForMode(StrategyMode mode) {
-    return switch (mode) {
-      StrategyMode.manual =>
-        'Manual order controls are available from Settings > Strategy Workspace. The dashboard keeps the live terminal visible so market and account activity are easy to monitor.',
-      StrategyMode.algo =>
-        'RSI tuning and backtests are grouped in Settings > Strategy Workspace, while the live terminal stays here for monitoring.',
-      StrategyMode.ai =>
-        'AI provider settings and trade zones are grouped in Settings > Strategy Workspace, while the live terminal stays here for monitoring.',
+  static String _tradingHeaderLabel({
+    required StrategyMode currentMode,
+    required bool isRunning,
+    required StrategyTradePlan? plan,
+    required int openOrderCount,
+  }) {
+    if (currentMode == StrategyMode.manual) {
+      return 'Trading: Manual';
+    }
+    if (!isRunning) {
+      return 'Trading: Auto Off';
+    }
+    if (openOrderCount > 0) {
+      return 'Trading: $openOrderCount Working';
+    }
+    if (plan == null || plan.signal == TradingSignal.hold) {
+      return 'Trading: Waiting';
+    }
+    return 'Trading: ${plan.actionLabel} ${plan.orderTypeLabel}';
+  }
+
+  static Color _tradingHeaderColor({
+    required StrategyMode currentMode,
+    required bool isRunning,
+    required StrategyTradePlan? plan,
+    required int openOrderCount,
+  }) {
+    if (currentMode == StrategyMode.manual) {
+      return AppColors.glowAmber;
+    }
+    if (!isRunning) {
+      return AppColors.warning;
+    }
+    if (openOrderCount > 0) {
+      return AppColors.glowCyan;
+    }
+    if (plan == null || plan.signal == TradingSignal.hold) {
+      return AppColors.textSecondary;
+    }
+    return switch (plan.orderTypeLabel.toLowerCase()) {
+      'market' => AppColors.negative,
+      'limit' => AppColors.glowCyan,
+      'post only' => AppColors.positive,
+      'scaled' => AppColors.glowAmber,
+      _ => AppColors.glowCyan,
     };
   }
 }

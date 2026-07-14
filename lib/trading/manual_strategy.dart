@@ -18,13 +18,16 @@ class ManualStrategy extends TradingStrategy implements TradePlanningStrategy {
     RiskSettings? riskSettings,
     StrategyAnalysisContext? context,
   }) async {
+    final currentPrice = history.isEmpty ? 0.0 : history.last.close;
     return StrategyTradePlan.hold(
       strategyName: name,
-      currentPrice: history.isEmpty ? 0.0 : history.last.close,
+      currentPrice: currentPrice,
       leverage: riskSettings?.leverage ?? 1,
       takeProfitPercent: riskSettings?.takeProfitPercent ?? 0.0,
       stopLossPercent: riskSettings?.stopLossPercent ?? 0.0,
-      quantity: riskSettings?.tradeQuantity,
+      quantity:
+          riskSettings?.resolveQuantity(currentPrice) ??
+          riskSettings?.tradeQuantity,
       rationale:
           'Manual mode is active. The strategy console will watch the market, but entry type and side stay under your control.',
       confidence: 1.0,

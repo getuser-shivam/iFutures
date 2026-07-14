@@ -8,6 +8,7 @@ import 'package:ifutures/models/binance_account_status.dart';
 import 'package:ifutures/models/connection_status.dart';
 import 'package:ifutures/models/manual_order.dart';
 import 'package:ifutures/models/market_analysis.dart';
+import 'package:ifutures/models/order_book_snapshot.dart';
 import 'package:ifutures/models/position.dart';
 import 'package:ifutures/models/risk_settings.dart';
 import 'package:ifutures/models/ai_service_status.dart';
@@ -58,6 +59,17 @@ void main() {
                 strategy: 'Binance Live',
                 kind: 'LIVE',
               ),
+              Trade(
+                symbol: 'GALAUSDT',
+                side: 'SELL',
+                price: 0.021,
+                quantity: 450,
+                timestamp: DateTime(2026, 3, 20, 12, 10),
+                status: 'filled',
+                strategy: 'Binance Live',
+                kind: 'EXIT',
+                realizedPnl: 0.35,
+              ),
             ];
           }),
           positionStreamProvider.overrideWith((ref, symbol) async* {
@@ -67,6 +79,27 @@ void main() {
               entryPrice: 0.00348,
               quantity: 1200,
               entryTime: DateTime(2026, 3, 20, 11, 55),
+              liquidationPrice: 0.00425,
+            );
+          }),
+          orderBookSnapshotProvider.overrideWith((ref, symbol) async* {
+            yield OrderBookSnapshot(
+              capturedAt: DateTime(2026, 3, 20, 12, 3),
+              bestBid: 0.00334,
+              bestAsk: 0.00336,
+              midPrice: 0.00335,
+              spread: 0.00002,
+              spreadPercent: 0.5970,
+              bidDepthNotional: 1240.5,
+              askDepthNotional: 1108.8,
+              imbalancePercent: 5.6,
+              levelsAnalyzed: 12,
+              plannedQuantity: 1200,
+              estimatedBuyFillPrice: 0.003365,
+              estimatedSellFillPrice: 0.003335,
+              estimatedBuySlippagePercent: 0.15,
+              estimatedSellSlippagePercent: 0.13,
+              executionHint: 'Limit entry preferred',
             );
           }),
           pendingManualOrderStreamProvider.overrideWith((ref, symbol) async* {
@@ -212,17 +245,19 @@ void main() {
     expect(materialApp.title, 'iFutures Bot');
     expect(materialApp.debugShowCheckedModeBanner, isFalse);
 
-    expect(find.text('Strategy Workspace'), findsOneWidget);
+    expect(find.text('AI Trade Rules'), findsNothing);
     expect(find.text('USDT'), findsOneWidget);
     expect(find.byIcon(Icons.photo_library_outlined), findsOneWidget);
+    expect(find.text('Binance Demo: Active'), findsOneWidget);
+    await tester.scrollUntilVisible(
+      find.text('Manual Order Ticket'),
+      450,
+      scrollable: find.byType(Scrollable).first,
+    );
+    expect(find.text('Manual Order Ticket'), findsOneWidget);
     expect(
-      find.textContaining(
-        'Mode selection, manual tickets, and backtesting now live in Settings',
-      ),
+      find.textContaining('Orders route to Binance DEMO Futures'),
       findsOneWidget,
     );
-    expect(find.text('Strategy Terminal'), findsOneWidget);
-    expect(find.text('Manual Order Ticket'), findsNothing);
-    expect(find.text('Binance: Active'), findsOneWidget);
   });
 }

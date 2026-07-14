@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -78,7 +79,7 @@ class TradeHistory extends ConsumerWidget {
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   TextButton.icon(
-                    onPressed: visibleTrades.isEmpty
+                    onPressed: kIsWeb || visibleTrades.isEmpty
                         ? null
                         : () async {
                             try {
@@ -116,7 +117,7 @@ class TradeHistory extends ConsumerWidget {
                       foregroundColor: AppColors.glowCyan,
                     ),
                     icon: const Icon(Icons.download_outlined, size: 16),
-                    label: const Text('EXPORT'),
+                    label: Text(kIsWeb ? 'EXPORT: DESKTOP' : 'EXPORT'),
                   ),
                   TextButton.icon(
                     onPressed:
@@ -150,8 +151,10 @@ class TradeHistory extends ConsumerWidget {
             ],
           ),
           const SizedBox(height: 8),
-          const Text(
-            'CSV exports save to your Documents/iFutures/exports folder.',
+          Text(
+            kIsWeb
+                ? 'CSV file export is available in the desktop app.'
+                : 'CSV exports save to your Documents/iFutures/exports folder.',
             style: TextStyle(color: AppColors.textMuted, fontSize: 11),
           ),
           if (isShowingAccountFallback) ...[
@@ -188,7 +191,6 @@ class TradeHistory extends ConsumerWidget {
               return SizedBox(
                 height: desiredHeight,
                 child: Scrollbar(
-                  thumbVisibility: visibleTrades.length > 3,
                   child: ListView.separated(
                     itemCount: visibleTrades.length,
                     padding: EdgeInsets.zero,

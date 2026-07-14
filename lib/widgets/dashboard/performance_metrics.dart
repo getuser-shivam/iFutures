@@ -133,7 +133,7 @@ class PerformanceMetrics extends ConsumerWidget {
                   : AppColors.negative,
             ),
             _MetricTile(
-              title: 'Total P&L',
+              title: 'P&L after exit fees',
               value: '\$${summary.totalPnL.toStringAsFixed(4)}',
               icon: summary.totalPnL >= 0
                   ? Icons.arrow_upward
@@ -161,8 +161,8 @@ class PerformanceMetrics extends ConsumerWidget {
               color: AppColors.textSecondary,
             ),
             _MetricTile(
-              title: 'Max Drawdown',
-              value: '${summary.maxDrawdown.toStringAsFixed(0)}%',
+              title: 'PnL Drawdown',
+              value: '${summary.maxDrawdown.toStringAsFixed(2)} USDT',
               icon: Icons.trending_down,
               color: AppColors.negative,
             ),

@@ -36,7 +36,8 @@ class _PriceAlertsCardState extends ConsumerState<PriceAlertsCard> {
 
   double? _parseDouble(String value) {
     final normalized = value.trim().replaceAll(',', '.');
-    return double.tryParse(normalized);
+    final parsed = double.tryParse(normalized);
+    return parsed?.isFinite == true ? parsed : null;
   }
 
   Future<void> _addAlert() async {

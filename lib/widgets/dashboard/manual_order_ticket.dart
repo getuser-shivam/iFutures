@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../models/manual_order.dart';
+import '../../models/binance_account_status.dart';
 import '../../models/position.dart';
 import '../../models/risk_settings.dart';
 import '../../models/rsi_strategy_preset.dart';
@@ -30,6 +31,7 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
   late TextEditingController _scaleEndController;
   late TextEditingController _scaleStepsController;
   String? _lastSuggestedQuantityText;
+  bool _isSubmitting = false;
 
   ManualOrderAction _selectedAction = ManualOrderAction.openLong;
   ManualOrderType _selectedOrderType = ManualOrderType.market;
@@ -45,16 +47,13 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
   }
 
   Future<void> _loadInitialQuantity() async {
-    final settings = ref.read(settingsServiceProvider);
-    await settings.init();
     if (!mounted) return;
-    final quantityText =
-        _formatEditableNumber(settings.getRiskTradeQuantity()) ?? '';
+    const quantityText = '';
     _quantityController.value = TextEditingValue(
       text: quantityText,
       selection: TextSelection.collapsed(offset: quantityText.length),
     );
-    _lastSuggestedQuantityText = quantityText;
+    _lastSuggestedQuantityText = null;
   }
 
   @override
@@ -68,14 +67,37 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
 
   double? _parseDouble(String value) {
     final normalized = value.trim().replaceAll(',', '.');
-    return double.tryParse(normalized);
+    final parsed = double.tryParse(normalized);
+    return parsed != null && parsed.isFinite ? parsed : null;
   }
 
   int? _parseInt(String value) {
     return int.tryParse(value.trim());
   }
 
-  Future<void> _submitOrder() async {
+  Future<void> _submitOrder(
+    ManualOrderRoutingExpectation routingExpectation,
+  ) async {
+    if (_isSubmitting) {
+      return;
+    }
+    setState(() {
+      _isSubmitting = true;
+    });
+    try {
+      await _submitOrderInternal(routingExpectation);
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isSubmitting = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _submitOrderInternal(
+    ManualOrderRoutingExpectation routingExpectation,
+  ) async {
     final engineAsync = ref.read(tradingEngineProvider(widget.symbol));
     if (engineAsync is! AsyncData) {
       if (!mounted) return;
@@ -94,7 +116,14 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     final position = ref
         .read(positionStreamProvider(widget.symbol))
         .valueOrNull;
-    final fallbackQuantity = _suggestedQuantity(position, riskSettings);
+    final livePrice = engine.klines.isNotEmpty
+        ? engine.klines.last.close
+        : null;
+    final fallbackQuantity = _suggestedQuantity(
+      position,
+      riskSettings,
+      livePrice,
+    );
     final quantity = _parseDouble(_quantityController.text) ?? fallbackQuantity;
 
     final request = ManualOrderRequest(
@@ -111,6 +140,7 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
       scaleSteps: _selectedOrderType == ManualOrderType.scaled
           ? (_parseInt(_scaleStepsController.text) ?? 0)
           : 1,
+      routingExpectation: routingExpectation,
     );
 
     final result = await engine.submitManualOrder(request);
@@ -138,6 +168,9 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     final engineAsync = ref.watch(tradingEngineProvider(widget.symbol));
     final engine = engineAsync.valueOrNull;
     final currentStrategy = ref.watch(currentStrategyProvider);
+    final binanceStatusAsync = ref.watch(
+      binanceAccountStatusProvider(widget.symbol),
+    );
     final signalAsync = ref.watch(signalStreamProvider(widget.symbol));
     final latestPlanAsync = ref.watch(
       decisionPlanStreamProvider(widget.symbol),
@@ -160,7 +193,23 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
       orElse: () => const <PendingManualOrder>[],
     );
     final latestPlan = latestPlanAsync.valueOrNull;
-    final suggestedQuantity = _suggestedQuantity(position, risk);
+    final exchangeRoutingActive = binanceStatusAsync.maybeWhen(
+      data: (status) => status.state == BinanceAccountState.active,
+      orElse: () => false,
+    );
+    final realMoneyRouting = binanceStatusAsync.maybeWhen(
+      data: (status) =>
+          status.state == BinanceAccountState.active && !status.isTestnet,
+      orElse: () => false,
+    );
+    final exchangeConfigured = engine?.hasExchangeCredentials == true;
+    final exchangeRoutingBlocked = exchangeConfigured && !exchangeRoutingActive;
+    final routingExpectation = exchangeRoutingActive
+        ? realMoneyRouting
+              ? ManualOrderRoutingExpectation.binanceLive
+              : ManualOrderRoutingExpectation.binanceDemo
+        : ManualOrderRoutingExpectation.paper;
+    final suggestedQuantity = _suggestedQuantity(position, risk, livePrice);
     _syncSuggestedQuantity(suggestedQuantity);
     final ticketQuantity =
         _parseDouble(_quantityController.text) ?? suggestedQuantity;
@@ -172,14 +221,14 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     final ticketMargin = ticketNotional == null
         ? null
         : ticketNotional / leverage;
-    final ticketTakeProfit =
-        ticketNotional == null || risk == null || risk.takeProfitPercent <= 0
-        ? null
-        : ticketNotional * (risk.takeProfitPercent / 100);
-    final ticketStopLoss =
-        ticketNotional == null || risk == null || risk.stopLossPercent <= 0
-        ? null
-        : ticketNotional * (risk.stopLossPercent / 100);
+    final ticketTakeProfit = risk?.resolveEstimatedTakeProfitUsdt(
+      previewPrice,
+      ticketQuantity,
+    );
+    final ticketStopLoss = risk?.resolveEstimatedMaxLossUsdt(
+      previewPrice,
+      ticketQuantity,
+    );
     final positionExposure = position == null
         ? null
         : position.entryPrice * position.quantity;
@@ -200,9 +249,16 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
             ),
           ),
           const SizedBox(height: 6),
-          const Text(
-            'Choose exactly how to open or close the position. If AI or ALGO is active, submitting a manual ticket stops auto execution and gives control back to you.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+          Text(
+            exchangeRoutingActive
+                ? 'Choose exactly how to open or close the position. Orders route to Binance ${realMoneyRouting ? 'REAL MONEY' : 'DEMO'} Futures and manual submission pauses AI or ALGO execution. Keep the app open while any entry is working so a later fill can be reconciled and protected.'
+                : exchangeRoutingBlocked
+                ? 'Binance credentials are configured, but Futures routing is still checking or unavailable. Submission is disabled so this ticket cannot switch from PAPER to live during a click.'
+                : 'PAPER SIMULATION only: this ticket updates local simulated positions and sends no exchange order. If AI or ALGO is active, submitting it stops auto execution and gives control back to you.',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
           ),
           const SizedBox(height: 12),
           Wrap(
@@ -226,6 +282,22 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
                   isRunning,
                   engine?.isManualOverrideActive ?? false,
                 ),
+              ),
+              StatusPill(
+                label: exchangeRoutingActive
+                    ? (realMoneyRouting
+                          ? 'REAL MONEY routing'
+                          : 'Binance DEMO routing')
+                    : exchangeRoutingBlocked
+                    ? 'BINANCE CHECKING'
+                    : 'PAPER SIMULATION',
+                color: exchangeRoutingActive
+                    ? (realMoneyRouting
+                          ? AppColors.negative
+                          : AppColors.glowAmber)
+                    : exchangeRoutingBlocked
+                    ? AppColors.glowAmber
+                    : AppColors.glowCyan,
               ),
             ],
           ),
@@ -275,9 +347,12 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
           TextField(
             controller: _quantityController,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
-            decoration: const InputDecoration(
+            decoration: InputDecoration(
               labelText: 'Order Quantity',
-              helperText: 'Edit this to control how much the ticket invests.',
+              helperText:
+                  risk?.investmentUsdt == null || risk!.investmentUsdt! <= 0
+                  ? 'Edit base quantity directly.'
+                  : 'Resolved from ${_formatUsdt(risk.investmentUsdt)} margin budget at ${leverage}x. You can still override it.',
             ),
           ),
           const SizedBox(height: 12),
@@ -338,7 +413,9 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
           Text(
             _selectedAction.isCloseAction
                 ? 'Close tickets default to the matching open position size, but you can edit the quantity for partial exits.'
-                : 'Open tickets start from your saved risk size, and you can edit the quantity to change the invested exposure.',
+                : (risk?.investmentUsdt == null || risk!.investmentUsdt! <= 0
+                      ? 'Open tickets start from your saved base quantity, and you can edit the quantity to change the invested exposure.'
+                      : 'Open tickets start from your saved USDT margin budget, converted into base quantity from the live price. You can still edit the final quantity directly.'),
             style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 11,
@@ -365,6 +442,14 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
                     columns;
 
                 final metrics = [
+                  _TicketMeta(
+                    label: 'Margin Budget',
+                    value: _formatUsdt(risk?.investmentUsdt),
+                    helper: risk?.investmentUsdt == null
+                        ? 'Using legacy quantity mode'
+                        : '${leverage}x leverage cap',
+                    valueColor: AppColors.glowCyan,
+                  ),
                   _TicketMeta(
                     label: 'Ticket Qty',
                     value: _formatQuantity(ticketQuantity),
@@ -396,9 +481,11 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
                     value: ticketTakeProfit == null
                         ? 'OFF'
                         : '+${_formatUsdt(ticketTakeProfit)}',
-                    helper: risk == null || risk.takeProfitPercent <= 0
+                    helper: risk == null || !risk.hasTakeProfit
                         ? 'No TP configured'
-                        : '${risk.takeProfitPercent.toStringAsFixed(2)}% target',
+                        : (risk.hasAbsoluteTakeProfit
+                              ? 'Estimated USDT target'
+                              : '${risk.takeProfitPercent.toStringAsFixed(2)}% target'),
                     valueColor: AppColors.positive,
                   ),
                   _TicketMeta(
@@ -406,9 +493,11 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
                     value: ticketStopLoss == null
                         ? 'OFF'
                         : '-${_formatUsdt(ticketStopLoss)}',
-                    helper: risk == null || risk.stopLossPercent <= 0
+                    helper: risk == null || !risk.hasStopLoss
                         ? 'No SL configured'
-                        : '${risk.stopLossPercent.toStringAsFixed(2)}% risk cap',
+                        : (risk.hasAbsoluteStopLoss
+                              ? 'Estimated USDT max loss'
+                              : '${risk.stopLossPercent.toStringAsFixed(2)}% risk cap'),
                     valueColor: AppColors.negative,
                   ),
                   _TicketMeta(
@@ -450,11 +539,17 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
           ),
           const SizedBox(height: 12),
           ActionButton(
-            label:
-                '${_selectedOrderType.label.toUpperCase()} ${_selectedAction.label.toUpperCase()}',
+            label: exchangeRoutingBlocked
+                ? 'BINANCE ROUTING BLOCKED'
+                : exchangeRoutingActive
+                ? 'SEND ${_selectedOrderType.label.toUpperCase()} ${_selectedAction.label.toUpperCase()}'
+                : 'SIMULATE ${_selectedOrderType.label.toUpperCase()} ${_selectedAction.label.toUpperCase()}',
             icon: _actionIcon(_selectedAction),
             color: _actionColor(_selectedAction),
-            onPressed: engineAsync.isLoading ? null : _submitOrder,
+            onPressed:
+                engineAsync.isLoading || _isSubmitting || exchangeRoutingBlocked
+                ? null
+                : () => _submitOrder(routingExpectation),
           ),
           if (pendingOrders.isNotEmpty) ...[
             const SizedBox(height: 16),
@@ -716,13 +811,18 @@ class _ManualOrderTicketState extends ConsumerState<ManualOrderTicket> {
     };
   }
 
-  double? _suggestedQuantity(Position? position, RiskSettings? riskSettings) {
+  double? _suggestedQuantity(
+    Position? position,
+    RiskSettings? riskSettings,
+    double? livePrice,
+  ) {
     if (_selectedAction.isCloseAction &&
         position != null &&
         position.side == _selectedAction.positionSide) {
       return position.quantity;
     }
-    return riskSettings?.tradeQuantity;
+    return riskSettings?.resolveQuantity(livePrice) ??
+        riskSettings?.tradeQuantity;
   }
 
   ManualOrderAction? _planSuggestedAction(StrategyTradePlan plan) {

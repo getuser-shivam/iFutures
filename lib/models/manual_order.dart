@@ -27,6 +27,8 @@ extension ManualOrderActionX on ManualOrderAction {
 
 enum ManualOrderType { market, limit, postOnly, scaled }
 
+enum ManualOrderRoutingExpectation { paper, binanceDemo, binanceLive }
+
 extension ManualOrderTypeX on ManualOrderType {
   String get label => switch (this) {
     ManualOrderType.market => 'Market',
@@ -43,6 +45,7 @@ class ManualOrderRequest {
   final double? price;
   final double? scaleEndPrice;
   final int scaleSteps;
+  final ManualOrderRoutingExpectation? routingExpectation;
 
   const ManualOrderRequest({
     required this.action,
@@ -51,6 +54,7 @@ class ManualOrderRequest {
     this.price,
     this.scaleEndPrice,
     this.scaleSteps = 1,
+    this.routingExpectation,
   });
 }
 

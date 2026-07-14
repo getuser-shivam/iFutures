@@ -7,7 +7,7 @@ class BinanceWebSocketService {
   final bool isTestnet;
 
   String get baseWsUrl => isTestnet
-      ? 'wss://fstream.binancefuture.com/ws'
+      ? 'wss://demo-fstream.binance.com/ws'
       : 'wss://fstream.binance.com/ws';
 
   BinanceWebSocketService({this.isTestnet = true});
@@ -23,7 +23,7 @@ class BinanceWebSocketService {
       url: url,
       onStatusChanged: onStatusChanged,
     );
-    return connection.stream.map((event) => jsonDecode(event as String));
+    return connection.stream.map(jsonDecode);
   }
 
   Stream<dynamic> subscribeToTicker(
@@ -36,6 +36,18 @@ class BinanceWebSocketService {
       url: url,
       onStatusChanged: onStatusChanged,
     );
-    return connection.stream.map((event) => jsonDecode(event as String));
+    return connection.stream.map(jsonDecode);
+  }
+
+  Stream<dynamic> subscribeToUserData(
+    String listenKey, {
+    void Function(ConnectionStatus status)? onStatusChanged,
+  }) {
+    final url = Uri.parse('$baseWsUrl/$listenKey');
+    final connection = ReconnectingWebSocket(
+      url: url,
+      onStatusChanged: onStatusChanged,
+    );
+    return connection.stream.map(jsonDecode);
   }
 }
